@@ -214,6 +214,8 @@ class SaveFolds:
     mutes_opened: bool | None = None
     # Staged per-row ``muted`` value; same contract as ``mutes_opened`` above.
     muted: bool | None = None
+    # Staged ``folder_id`` for the automatic filing; same contract again.
+    folder_id: str | None = None
     # Staged ``turn_timeout_secs``, the same shape for the turn-time-limit
     # endpoint. Wrapped in a 1-tuple because ``None`` is a real value there (it
     # clears the session's limit): ``None`` here means "nothing staged, read the
@@ -1114,8 +1116,8 @@ FIELDS: tuple[Field, ...] = (
         "folder_id",
         _ALL,
         attr="folder_id",
-        line=_truthy(lambda s: s.folder_id),
-        merge=_or_cleared(lambda s: s.folder_id, ""),
+        line=lambda s, f: (s.folder_id if f.folder_id is None else f.folder_id) or OMIT,
+        merge=lambda s, f: (s.folder_id if f.folder_id is None else f.folder_id) or "",
         read=_read_folder_id,
     ),
     # Sticky, and carried from disk as well as the slot: a restore that failed to

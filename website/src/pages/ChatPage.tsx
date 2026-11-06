@@ -774,7 +774,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     announceAttachmentChange,
   })
   const {
-    followupTsRef, followupAddToSession, folderSuggestionAccept, folderSuggestionDecline, followupBranchFor,
+    followupTsRef, followupAddToSession, folderSuggestionAccept, folderSuggestionUndo, folderSuggestionDecline, followupBranchFor,
   } = useFollowupCardActions({
     dispatch, moveSlotToFolder, activeSlot, folderSuggestion, followupTsBySlot, inputRef,
   })
@@ -1062,6 +1062,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     activeSlot,
     sidebarOnScreen,
     folderSuggestionAccept,
+    folderSuggestionUndo,
     folderSuggestionDecline,
     slotFolderId: currentSlot?.folder_id,
     slotProject: currentSlot?.project,
