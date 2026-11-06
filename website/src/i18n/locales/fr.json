@@ -21158,6 +21158,26 @@
         "scan_status_poll_failing": "Impossible de vérifier si le code a été scanné. Nouvelle tentative en cours.",
         "groups_unavailable": "Impossible de charger les groupes rejoints par ce compte."
       },
+      "remoteControlCard": {
+        "title": "Contrôle à distance",
+        "blocked": "Le contrôle à distance est réglé sur activé, mais il est bloqué et n'est pas connecté.",
+        "on": "Le contrôle à distance est activé. Ton compte Kiro peut accéder à {{productName}} depuis tes autres appareils.",
+        "restart_to_connect": "Le contrôle à distance est réglé sur activé, mais il n'est pas connecté. Redémarre {{productName}} pour le connecter.",
+        "reason_api_key": "{{productName}} est connecté à Kiro avec une clé d'API, et cette connexion ne permet pas d'utiliser le contrôle à distance. Connecte-toi avec ton propre compte Kiro pour l'utiliser.",
+        "reason_external_idp": "{{productName}} est connecté à Kiro via un fournisseur d'identité externe, et cette connexion ne permet pas d'utiliser le contrôle à distance. Connecte-toi avec ton propre compte Kiro pour l'utiliser.",
+        "reason_not_signed_in": "{{productName}} n'est pas connecté à Kiro.",
+        "reason_unknown_sign_in": "{{productName}} ne reconnaît pas ce type de connexion Kiro.",
+        "reason_locked": "Le contrôle à distance est géré par cette version et ne peut pas être activé ici.",
+        "turn_off": "Désactiver",
+        "turning_off": "Désactivation…",
+        "off_saved": "Le contrôle à distance est désactivé. Il le reste jusqu'à ce que tu le réactives.",
+        "turn_on_hint": "Pour le réactiver, exécute <command/> dans un terminal de la machine qui exécute {{productName}}, puis redémarre {{productName}}.",
+        "turn_off_disconnects": "Le désactiver déconnecte tes autres appareils en quelques secondes.",
+        "turn_off_needs_terminal": "Pour le réactiver plus tard, exécute <command/> dans un terminal de la machine qui exécute {{productName}}, puis redémarre {{productName}}.",
+        "turn_off_clears_blocked": "Rien n'est connecté pour l'instant. Le désactiver efface le réglage, et cet avertissement disparaît.",
+        "turn_off_failed": "Impossible de désactiver le contrôle à distance",
+        "load_failed": "Impossible de lire le réglage du contrôle à distance"
+      },
       "remoteCrewPanel": {
         "added_by_you": "Added by you",
         "approve_your_code": "Approuvez votre code de connexion",

@@ -137,7 +137,25 @@ export interface TailnetMobileQr {
   link_window_secs: number
 }
 
-export function createRemoteAccessEndpoints({ get, post, j }: ClientTransport) {
+/**
+ * GET/PUT /api/remote-control: personal Remote Control, whose one control is
+ * `tunnel.relay_enabled`. `requested` is what config asks for; `allowed` is
+ * whether the Kiro sign-in may hold it (an API key or an external identity
+ * provider may not), with `reason` naming the refusal. `running` says the relay
+ * client is connected now, so other devices can reach this Crew. The dashboard can
+ * only turn it off; turning it on is the terminal command.
+ */
+export interface RemoteControlState {
+  requested: boolean
+  allowed: boolean
+  reason: '' | 'api_key' | 'external_idp' | 'not_signed_in' | 'unknown_sign_in' | 'locked'
+  /** English notice from the backend, for logs; the UI renders its own copy from `reason`. */
+  notice: string
+  effective: boolean
+  running: boolean
+}
+
+export function createRemoteAccessEndpoints({ get, post, put, j }: ClientTransport) {
   const mobileAccess = {
     // `sessionKey` MUST carry the active slot's key (`dashboard:<slot>`) when one
     // is active: the server's restricted-session guard reads X-Session-Key, and
@@ -178,6 +196,10 @@ export function createRemoteAccessEndpoints({ get, post, j }: ClientTransport) {
     // it instead of the shared `dashboard:ui` placeholder.
     tailnetMobileQr: (sessionKey?: string) =>
       post('/api/tailnet/mobile/qr', {}, sessionKey).then(j) as Promise<TailnetMobileQr>,
+    remoteControl: () => get('/api/remote-control').then(j) as Promise<RemoteControlState>,
+    /** One-click off writes an explicit `false`, so it stays off across a restart. */
+    turnOffRemoteControl: () =>
+      put('/api/remote-control', { enabled: false }).then(j) as Promise<RemoteControlState>,
   }
 
   return { mobileAccess }
