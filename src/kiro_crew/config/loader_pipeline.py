@@ -649,6 +649,28 @@ def read_config_document() -> ConfigDocument:
                     type(_agent_section[_fail_closed_key]).__name__,
                 )
                 _agent_section[_fail_closed_key] = False
+    # ``telemetry.enabled`` defaults to TRUE (local recording on). A ``telemetry``
+    # that is not an object (an overlay's ``null`` replacing the base section), or
+    # an ``enabled`` that is not a bool (a quoted ``"false"``), is dropped by
+    # validation below and loads as the field default. Record the section as
+    # degraded: ``consent_pins._held_consent`` then keeps that default from
+    # turning on a recorder the malformed value may have meant to switch off.
+    _telemetry_section = data.get("telemetry")
+    if "telemetry" in data and (
+        not isinstance(_telemetry_section, dict)
+        or ("enabled" in _telemetry_section and not isinstance(_telemetry_section["enabled"], bool))
+    ):
+        _OBSERVED_DEGRADED_SECTIONS.add("telemetry")
+        logger.warning(
+            "telemetry.enabled is unreadable (%s); treating the telemetry section "
+            "as degraded, so local recording does not start from its default. "
+            "Write true or false without quotes to choose.",
+            type(
+                _telemetry_section.get("enabled")
+                if isinstance(_telemetry_section, dict)
+                else _telemetry_section
+            ).__name__,
+        )
     # Keep a genuinely absent default backward-compatible with older
     # configs, but normalize a PRESENT malformed value before advisory
     # schema validation can delete it and turn corruption into the
