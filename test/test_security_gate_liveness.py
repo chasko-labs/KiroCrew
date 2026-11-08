@@ -737,7 +737,10 @@ def _url_payload_command(n: int) -> str:
 #: and its facade row, so a glob operand after a bare glob verb (the ``* * * *`` of a
 #: cron schedule) is not read as this host; and ``helpers``' RLIMIT_AS key, now
 #: ``max_address_space_mb``. Re-measured.
-_PACKAGE_LINE_BUDGET = 35_143
+#: Raised by 81, from 35,143, for ``shell_commands.xargs_pipelines``: each pipeline that
+#: feeds ``xargs`` is also read as a line of its own, so a command chained before it no
+#: longer changes what the xargs rebuild sees. Deny-only: no allow widened. Re-measured.
+_PACKAGE_LINE_BUDGET = 35_224
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second

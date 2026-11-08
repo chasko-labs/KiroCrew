@@ -395,6 +395,59 @@ def redirect_hidden_payloads(command: str) -> "list[str]":
     return cache[command]
 
 
+#: The separator that closes each group opener: ``( … )`` and ``$( … )``, a backtick body.
+_GROUP_CLOSERS = {"(": ")", "`": "`"}
+
+
+def xargs_pipelines(command: str) -> "list[tuple[str, str, int]]":
+    """Each pipeline in *command* that feeds ``xargs``, cut out to be judged as a line: the
+    text before its own first pipe, the text after it, and its number of pipes of its own.
+
+    The xargs rebuild takes the piped words from the start of the text it reads, so a
+    command chained in front (``echo x; echo <name> | xargs <kill>``) left the name out
+    of the rebuilt argv. A pipeline is cut at the list separators of its own group, past
+    the reserved words that keep command position (``then``, ``do``), so it reads as the
+    line it would be typed alone; ``|&`` pipes like ``|``, and so does ``|`` before a newline."""
+    views: list[tuple[str, str, int]] = []
+    groups: list[list] = [[-1, 0, "", 0]]  # per open group: item start, pipes, opener, 1st pipe
+    boundary = end = 0
+    previous = ""
+
+    def close(item: list) -> None:
+        view = command[item[0] : end].strip() if item[1] else ""
+        if "xargs" in view and view != command.strip():
+            views.append((command[item[0] : item[3]], command[item[3] + 1 : end], item[1]))
+        item[:2] = [-1, 0]
+
+    for cmd in read_commands(command, nested=False, heredocs=True):
+        sep, at = cmd.separator, cmd.steps[-1].end if cmd.steps else boundary
+        boundary = max(boundary, at + len(sep), *(doc.tail + 1 for doc in cmd.heredocs))
+        if previous == "|" and sep in ("&", "\n") and not cmd.words:
+            continue  # ``|&``, or the pipeline goes on past a newline
+        previous = sep
+        for word in cmd.words:  # the leading words that open, close or keep a command
+            if word.raw == "}" and groups[-1][2] == "{":
+                close(groups.pop())
+            elif word.raw == "{":
+                groups[-1][0] = word.start if groups[-1][0] < 0 else groups[-1][0]
+                groups.append([-1, 0, "{", 0])
+            elif groups[-1][0] >= 0 or word.raw not in _shell._KEEPS_COMMAND_POSITION:
+                groups[-1][0] = word.start if groups[-1][0] < 0 else groups[-1][0]
+                break
+        end = at
+        if sep == _GROUP_CLOSERS.get(groups[-1][2]):
+            close(groups.pop())
+        elif sep in ("(", "`"):
+            groups[-1][0] = at if groups[-1][0] < 0 else groups[-1][0]
+            groups.append([-1, 0, sep, 0])
+        elif sep == "|":
+            groups[-1][3] = groups[-1][3] if groups[-1][1] else at
+            groups[-1][1] += 1
+        else:
+            close(groups[-1])
+    return views
+
+
 def without_substitutions(command: str) -> str:
     """*command* with each unquoted ``$(…)`` / ``<(…)`` / ``>(…)`` as the word ``_``, which
     :func:`read_commands` would cut (``bash -c 2>$(x) '<script>'``)."""
