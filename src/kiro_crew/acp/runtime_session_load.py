@@ -347,7 +347,12 @@ async def load_session(
             )
         )
         load_params["mcpServers"] = wire_servers
-        kas_agents = self._remote_workspace_agents(kas_agents, wire_servers)
+        # Same as create_session: a sub-agent the workspace cannot bind is named.
+        remote_notices: list[str] = []
+        kas_agents = self._remote_workspace_agents(
+            kas_agents, wire_servers, active_agent=active_agent, notices_out=remote_notices
+        )
+        withheld_notice = "\n\n".join(n for n in (withheld_notice, *remote_notices) if n)
         attach_kas_custom_agents(load_params, kas_agents)
         # The same last word session/new gets, asked inside this branch so the
         # kiro resume path still stops at the comparison above.
