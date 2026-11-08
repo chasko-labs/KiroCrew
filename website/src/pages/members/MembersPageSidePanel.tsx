@@ -33,6 +33,8 @@ import CrewDashboardTab from './CrewDashboardTab'
 import { isDashboardPreview, withoutDashboardPreview } from './dashboardPreview'
 import { claimDashboardOnLoad } from './dashboardOnLoad'
 import { suggestPaneDraft } from '../../utils/chatPaneDrafts'
+import { sendTurn } from '../../chat-core/transport/sendTurn'
+import { changeRequestOutcome } from './dashboardEdit'
 import { revealComposer } from '../chat/composerFocus'
 import { sessionTitleRoster } from '../../utils/sessionRoster'
 import { useLanguageGeneration } from '../../i18n/useLanguageGeneration'
@@ -562,6 +564,14 @@ export function MembersPageSidePanel({
           // chat box; the person sends it. The composer is revealed (focused on
           // desktop) so the result of the click is where the reader looks.
           onAct={activeSlot ? (text: string) => { suggestPaneDraft(activeSlot, text); revealComposer() } : undefined}
+          // Dashboard edit mode's change request: the person typed it in host UI and
+          // pressed Send, so it goes as their own message to this crewmate's thread.
+          onSend={confirmedSlot ? async (text: string) => {
+            const receipt = await sendTurn({ slot: confirmedSlot, message: text })
+            // An unconfirmed receipt is kept apart from a refusal: the request may
+            // have started a turn, so the box must not offer it again as if not sent.
+            return changeRequestOutcome(receipt.status)
+          } : undefined}
           // Badge click opens the Profile tab directly so the person can unlock.
           // Guard against an unsaved schedule form in the already-open card:
           // openProfile() increments the nonce which re-mounts the panel.

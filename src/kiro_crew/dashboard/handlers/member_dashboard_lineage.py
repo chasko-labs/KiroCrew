@@ -27,6 +27,7 @@ from typing import Any, Callable, Final, Mapping
 from aiohttp import web
 
 from kiro_crew import dashboard_edit_mode
+from kiro_crew.crew_log.entry_types import DASHBOARD_REASON_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +38,10 @@ __all__ = [
     "register_member_dashboard_lineage_routes",
 ]
 
-#: Characters the person's reason for a correction keeps.
-REASON_LIMIT: Final[int] = 240
-
 #: Gaps the record cannot fill yet, by the words the host shows.
 NEEDS_FOLD_SEQ: Final[str] = "entry seq on fold rows"
 NEEDS_LOOKED_AT: Final[str] = "source + observed_at on dashboard_write"
+NEEDS_RUN_ID: Final[str] = "run id and code digest on the scheduler's run record"
 
 #: The custom fold's name, as ``crew_log.entry_types_surfaces.CUSTOM_FOLD_NAME`` spells it.
 _CUSTOM_FOLD: Final[str] = "custom"
@@ -77,23 +76,8 @@ def _record_hops(record_type: str, row: Mapping[str, Any] | None) -> list[dict[s
             "by": "gateway",
         }
     ]
-    provenance = row.get("provenance")
-    if isinstance(provenance, Mapping):
-        hops.append(
-            {
-                "kind": "script",
-                "job": str(provenance.get("job") or ""),
-                "run_at": str(provenance.get("run_at") or ""),
-                "script": str(provenance.get("script") or ""),
-                "sha": str(provenance.get("sha") or ""),
-                "by": "gateway",
-            }
-        )
-    if isinstance(row.get("source"), str) and row.get("source"):
-        source: dict[str, Any] = {"kind": "source", "source": row["source"], "by": "script"}
-        if isinstance(row.get("points"), list):
-            source["points"] = row["points"]
-        hops.append(source)
+    # In the order a reader asks: is it current, did the job keep running, which
+    # script wrote it, and what that script says it read.
     hops.append(
         {
             "kind": "freshness",
@@ -111,6 +95,30 @@ def _record_hops(record_type: str, row: Mapping[str, Any] | None) -> list[dict[s
                 "by": "gateway",
             }
         )
+    provenance = row.get("provenance")
+    if isinstance(provenance, Mapping):
+        script: dict[str, Any] = {
+            "kind": "script",
+            "job": str(provenance.get("job") or ""),
+            "run_at": str(provenance.get("run_at") or ""),
+            "script": str(provenance.get("script") or ""),
+            # The scheduler keeps no id per run and no digest of the code that ran, so
+            # neither is stored; the gap is named.
+            "needs": NEEDS_RUN_ID,
+            "by": "gateway",
+        }
+        hops.append(script)
+    # The readings ride on the source hop, which a script may send without a descriptor.
+    has_source = isinstance(row.get("source"), Mapping)
+    if has_source or isinstance(row.get("points"), list):
+        source: dict[str, Any] = {
+            "kind": "source",
+            "source": dict(row["source"]) if has_source else {},
+            "by": "script",
+        }
+        if isinstance(row.get("points"), list):
+            source["points"] = row["points"]
+        hops.append(source)
     return hops
 
 
@@ -184,7 +192,12 @@ def build_lineage(
                 }
             )
         hops.append({"kind": "looked_at", "needs": NEEDS_LOOKED_AT})
-        edit: dict[str, Any] = {"kind": "correct", "type": spec.type}
+        # A whole object or list is not typed by hand: the popover offers Ask instead.
+        edit: dict[str, Any] = {
+            "kind": "correct",
+            "type": spec.type,
+            "scalar": spec.type not in ("array", "object"),
+        }
     else:
         fold, fold_path = str(spec.fold or ""), str(spec.path or "")
         kind = "custom" if fold == _CUSTOM_FOLD else "fold"
@@ -207,13 +220,15 @@ def build_lineage(
             }
         )
         if kind == "custom":
-            record_type, row = _custom_row(custom, fold_path)
+            # A field bound to ``latest`` names its record only in the picked subpath.
+            record_type, row = _custom_row(custom, (fold_path + sub).lstrip("."))
             hops.extend(_record_hops(record_type, row))
             writer = str((row or {}).get("writer") or "")
-            edit = {"kind": "none", "reason": "cron", "writer": writer}
+            job = writer.removeprefix("cron:") if writer.startswith("cron:") else ""
+            edit = {"kind": "source", "writer": writer, "job": job}
         else:
             hops.append({"kind": "crew_log", "fold": fold, "needs": NEEDS_FOLD_SEQ})
-            edit = {"kind": "none", "reason": "fold"}
+            edit = {"kind": "fold"}
     return redact(
         {
             "path": path,
@@ -243,6 +258,44 @@ async def _gate(request: web.Request, operation: str) -> tuple[str, str] | web.R
     return resolved
 
 
+def _manifest_in_force(slug: str) -> Any:
+    """The manifest of the page *slug*'s tab shows, or ``None``. File IO.
+
+    A package page first, through ``dashboard_package.read_package_model``: the seam
+    a ``dashboard_write`` is checked through, which answers the read route's own rule
+    (a pinned package, or an older record's bound package with a version a person
+    cut). Otherwise the template page in force.
+    """
+    from kiro_crew import dashboard_agentic, dashboard_package
+
+    try:
+        package = dashboard_package.read_package_model(slug)
+    except dashboard_package.PackageReadError:
+        package = None
+    if package is not None and package.from_package and package.model is not None:
+        return package.model.manifest
+    page = dashboard_agentic.page_in_force(slug)
+    return page[1] if page is not None else None
+
+
+def _tree_value(slot: str, fold: str, fold_path: str) -> tuple[bool, Any]:
+    """``(found, value)`` of *fold_path* in the tree fold *fold* rooted at *slot*. File IO.
+
+    The read ``LivePage._read_trees`` and ``_resolve_trees`` make for the page: a tree
+    that cannot be read, or that lacks the path, is not found.
+    """
+    from kiro_crew.crew_log import projection
+    from kiro_crew.dashboard_feed import MISSING, resolve_path
+
+    try:
+        tree = projection.read_tree_projection(slot, fold).value
+    except Exception:
+        logger.info("lineage: the %s tree could not be read", fold)
+        return False, None
+    value = resolve_path(tree, fold_path)
+    return (False, None) if value is MISSING else (True, value)
+
+
 def _read_lineage(slug: str, member: str, path: str, state: Any) -> dict[str, Any] | str:
     """The lineage for *path* on *slug*'s page in force, or a refusal code. File IO."""
     from kiro_crew import dashboard_agentic
@@ -253,12 +306,9 @@ def _read_lineage(slug: str, member: str, path: str, state: Any) -> dict[str, An
     if parsed is None:
         return "invalid_path"
     root, steps = parsed
-    page = dashboard_agentic.page_in_force(slug)
-    if page is None:
-        # shortcut: an older record that finds its package by binding alone is not
-        # traced; upgrade by sharing member_dashboard._serve's selection if one needs it.
+    manifest = _manifest_in_force(slug)
+    if manifest is None:
         return "no_page"
-    _record, manifest = page
     spec = manifest.fields.get(root)
     if spec is None:
         return "field_not_declared"
@@ -277,12 +327,37 @@ def _read_lineage(slug: str, member: str, path: str, state: Any) -> dict[str, An
             ).get(root, "")
     elif spec.fold == _CUSTOM_FOLD:
         custom = projection.read_slot_projection(slot, _CUSTOM_FOLD).value
+    field_value = read.fields.get(root)
+    field_found = root in read.fields and root not in read.missing
+    # ONE SNAPSHOT: the value shown and the provenance beside it come from the same
+    # fold read, so a write landing between two reads cannot pair one write's value
+    # with another's writer, time and freshness.
+    if isinstance(agentic_row, Mapping) and "value" in agentic_row:
+        field_found, field_value = True, agentic_row["value"]
+    elif custom is not None:
+        from kiro_crew.dashboard_feed import MISSING, resolve_path
+
+        resolved = resolve_path(custom, str(spec.path or ""))
+        field_found, field_value = resolved is not MISSING, (
+            None if resolved is MISSING else resolved
+        )
+    if not spec.agentic and str(spec.fold or "") in projection.TREE_PROJECTION_NAMES:
+        # A tree fold has no subscription, so the feed reports its fields missing; the
+        # package page reads the tree rooted at its own slot, and so does this.
+        field_found, field_value = _tree_value(slot, str(spec.fold), str(spec.path or ""))
+    if field_found:
+        # THE VALUE THE PAGE DREW, WHOLE: the page is sent this field through
+        # ``page_safe_for``, which stamps work items with their worker facts and then
+        # masks what the page may not see (a worker's session key, a bind event's text).
+        # The picked subpath is walked in THAT value, so it can reach neither a masked
+        # key nor miss a stamped one; the reply still goes through the same pass.
+        field_value = md.page_safe_for(state, slot)(field_value)
     return build_lineage(
         spec,
         steps,
         path=path,
-        field_value=read.fields.get(root),
-        field_found=root in read.fields and root not in read.missing,
+        field_value=field_value,
+        field_found=field_found,
         agentic_row=agentic_row,
         stale_after=stale_after,
         custom=custom,
@@ -358,9 +433,20 @@ async def api_member_dashboard_correct(request: web.Request) -> web.Response:
     if not isinstance(body, dict) or not isinstance(body.get("field"), str) or "value" not in body:
         return _bad("invalid_body", "body must be {field, value, reason?}")
     reason = body.get("reason", "")
-    if not isinstance(reason, str) or len(reason) > REASON_LIMIT or "\n" in reason.strip():
+    if isinstance(reason, str) and reason.strip():
+        from kiro_crew.platform.context import redact_via_context
+
+        # Measured as stored: redaction can lengthen a reason, and the fold keeps at
+        # most DASHBOARD_REASON_LIMIT, so a longer one would be cut without a word.
+        reason = redact_via_context(reason.strip())
+    if (
+        not isinstance(reason, str)
+        or len(reason) > DASHBOARD_REASON_LIMIT
+        or "\n" in reason.strip()
+    ):
         return _bad(
-            "invalid_reason", f"reason must be one line of at most {REASON_LIMIT} characters"
+            "invalid_reason",
+            f"reason must be one line of at most {DASHBOARD_REASON_LIMIT} characters",
         )
     field = body["field"]
     try:
@@ -377,12 +463,13 @@ async def api_member_dashboard_correct(request: web.Request) -> web.Response:
         entry = dashboard_agentic.check_write(package.model, field, body["value"])
     except dashboard_agentic.WriteRefused as refused:
         return _bad(refused.code, dashboard_agentic.refusal_sentence(refused))
+    if entry.get("type") in ("array", "object"):
+        # A whole list or record is the Bot's to rebuild; the person asks instead.
+        return _bad("not_scalar", "a list or object value cannot be corrected by hand; ask the Bot")
     entry["crew_key"] = agent_panel.crew_key(member)
     entry["actor"] = "person"
     if reason.strip():
-        from kiro_crew.platform.context import redact_via_context
-
-        entry["reason"] = redact_via_context(reason.strip())
+        entry["reason"] = reason
     if not crew_log_emit.enabled():
         return _bad("crew_log_off", "this gateway is not recording a crew log", status=503)
     if not await asyncio.to_thread(_append_correction, slug, member, entry):

@@ -197,6 +197,8 @@ export type {
   CrewTeam,
   DashboardFieldSpec,
   DashboardManifest,
+  DashboardLineage,
+  DashboardLineageHop,
 } from './client/agents'
 export { SLASH_COMMANDS_TIMEOUT_MS } from './client/chatSlotSettings'
 export type {

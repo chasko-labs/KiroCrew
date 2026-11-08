@@ -4,6 +4,7 @@ import CrewDashboardLoading from './CrewDashboardLoading'
 import DashboardPreviewLabel from '../chat/DashboardPreviewLabel'
 import DashboardPreviewActions, { DashboardPreviewOutcomeNote, usePreviewHandover } from '../chat/DashboardPreviewActions'
 import { MEMBER_DASHBOARD_QUERY_PREFIX } from '../../hooks/useWebSocket'
+import type { ChangeRequestOutcome } from './dashboardEdit'
 
 const CrewDynamicDashboard = lazy(() => import('./CrewDynamicDashboard'))
 
@@ -18,7 +19,7 @@ const CrewDynamicDashboard = lazy(() => import('./CrewDynamicDashboard'))
  * The tab holds the dashboard alone and offers no view switch. The raw crew-log
  * record is a diagnostics surface, reached from the chat panel's own Crew log
  * view, so the thread's slot is not part of this tab's input. */
-export default function CrewDashboardTab({ slug, member, displayName, avatar, onAct, onOpenProfileTab, preview = false, onLeavePreview }: {
+export default function CrewDashboardTab({ slug, member, displayName, avatar, onAct, onSend, onOpenProfileTab, preview = false, onLeavePreview }: {
   slug: string
   member: string
   displayName: string
@@ -26,6 +27,8 @@ export default function CrewDashboardTab({ slug, member, displayName, avatar, on
   avatar?: unknown
   /** Put a reply the page offered into this crewmate's chat box. */
   onAct?: (text: string) => void
+  /** Send the person's own message to this crewmate (Dashboard edit mode's change request). */
+  onSend?: (text: string) => Promise<ChangeRequestOutcome>
   /** Called when the person clicks the "Layout locked · Profile" badge to go
    *  straight to the Profile tab where the lock switch lives. */
   onOpenProfileTab?: () => void
@@ -72,6 +75,7 @@ export default function CrewDashboardTab({ slug, member, displayName, avatar, on
             displayName={name}
             avatar={avatar}
             onAct={onAct}
+            onSend={onSend}
             onOpenProfileTab={onOpenProfileTab}
             preview={showPreview}
             onPreviewGone={showPreview ? onPreviewGone : undefined}
