@@ -2794,6 +2794,22 @@ and no configured profile governs it (`any_configured_profile_governs`), and no
 read-class call; alone it runs with no prompt, as the engine's own approval did.
 It grants nothing the spec did not: an unrecorded write still prompts.
 
+The same row answers an MCP tool a PreToolUse hook's `ask` took from the KAS
+policy's auto-approval (`kas_hook_coverage.withhold_hook_gated_auto_approval`): the
+projection records each `@server/tool` ref the policy auto-approved before those
+asks and not after them (`kas_hook_coverage.hook_held_grants`, under
+`kas_permissions.CREW_ANSWERED_HOOK_HELD_KEY`), read as KAS resolves the rules, so an
+author's own `ask` or `deny` keeps a tool out. The session handle stamps those refs
+on the request apart from the writes (`AcpEvent.spec_hook_held`), and the row answers
+one only when the surface says it fires the PreToolUse hooks on the request
+(`pre_tool_hooks_fire`): the chat, subagent and task-runner turn loops. There, with
+the same checks as above, the granted tool runs with no prompt, as it does on
+kiro-cli, and a hook's exit 2 still blocks it. Every other surface keeps asking for
+the call, a channel bot's turn included: it runs the PreToolUse hooks
+(`messaging/tool_hooks.py`) but its gate is not told, so a hook meant to veto a call
+is never replaced by an unprompted run. A glob grant is recorded for the server tools
+the MCP probe cache lists; on a server it lists none for, the call still prompts.
+
 The same row answers a spec's `toolsSettings.shell.allowedCommands` (#25320), and the
 `match` globs of a `permissions` `shell` `allow` with no `exclude` (#25365): `*` is
 read as `.*` and every other character as a literal, and a glob holding `? [ ] { } !`

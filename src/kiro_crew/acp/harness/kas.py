@@ -59,7 +59,7 @@ from kiro_crew.acp.kas_app_identity import resolve_app_identity_launches
 from kiro_crew.acp.kas_host_auth import answer_get_access_token, vault_holds_identity_off_loop
 from kiro_crew.acp.kas_mcp_json_legacy import legacy_mcp_json
 from kiro_crew.acp.kas_prompt import prompt_unread_notice, spec_prompt
-from kiro_crew.acp.kas_settings_mcp import excluded_whole, stamp_settings_mcp
+from kiro_crew.acp.kas_settings_mcp import excluded_whole, include_mcp_json, stamp_settings_mcp
 from kiro_crew.acp.kas_tool_limits import (
     kas_globs,
     unmatched_disabled_globs,
@@ -623,7 +623,8 @@ class KasHarness(MembershipHarness):
         which the runtime maps to the Kiro sign-in prompt. A missing engine is
         installed here, in the gateway, one install at a time
         (:mod:`kiro_crew.acp.kas_engine_install`); a failed install is a refusal
-        naming the cause and the retry command.
+        naming the cause and the retry command, and a host that cannot run the
+        engine is a final refusal (``AcpKasHostUnsupported``) naming the cause alone.
 
         **Relay**: ``kiro-cli`` in relay mode. Crew owns the credential when its
         own vault holds a signed-in identity, and kiro-cli owns it otherwise.
@@ -773,6 +774,7 @@ class KasHarness(MembershipHarness):
         # whether or not that route is used.
         from kiro_crew.acp import kas_bundle as kas_bundle_mod
         from kiro_crew.acp import kas_engine_install
+        from kiro_crew.acp.kas_host_unsupported import AcpKasHostUnsupported
         from kiro_crew.acp.session_handle import AcpRuntimeError
         from kiro_crew.config.loader import KiroCrewConfig
 
@@ -784,6 +786,9 @@ class KasHarness(MembershipHarness):
                 bundle = await asyncio.to_thread(
                     partial(kas_engine_install.install_pinned_engine, base_url, caller="spawn")
                 )
+            except kas_bundle_mod.KasHostUnsupported as exc:
+                # Final, not a failed transfer: the next spawn finds the same host.
+                raise AcpKasHostUnsupported(f"{route.describe()}. {exc}") from exc
             except kas_bundle_mod.KasBundleError as exc:
                 raise AcpRuntimeError(f"{route.describe()}. {exc}") from exc
         logger.info(
@@ -891,6 +896,11 @@ class KasHarness(MembershipHarness):
         handle.kas_crew_answered = kas_agents_mod.projected_crew_answered(
             custom_agents, active_agent
         )
+        # The MCP grants a PreToolUse hook kept at ``ask``: answered the same way,
+        # but only on a surface that fires the hooks (``batch-guard-grant`` row).
+        from kiro_crew.acp.kas_hook_coverage import projected_hook_held
+
+        handle.kas_hook_held = projected_hook_held(custom_agents, active_agent)
         handle.kas_crew_answered_commands = kas_agents_mod.projected_crew_answered_commands(
             custom_agents, active_agent
         )
@@ -945,6 +955,7 @@ class KasHarness(MembershipHarness):
         engine_features: frozenset[str] = frozenset(),
         session_cwd: str | Path | None = None,
         ssh_auth_sock_forwarded: bool = False,
+        governance_app: str | None = None,
     ) -> SessionExtras:
         """Project the agent spec onto KAS, for both session start paths.
 
@@ -1139,6 +1150,7 @@ class KasHarness(MembershipHarness):
                     and self.spawn_sandbox_mode is not None
                     and sandbox_mod._forward_ssh_auth_sock(self.spawn_sandbox_mode, ())
                 ),
+                governance_app=governance_app,
             )
             # Every per-tool switch, the global settings file's included: the spec
             # rebuild never copies one onto Crew's own servers. Read here, off the loop.
@@ -1163,6 +1175,8 @@ class KasHarness(MembershipHarness):
                 and prompt_dir == agents_dir,
                 notices=spec_notices,
                 unmatched=unmatched,
+                # From the spec: the projected entry never carries a ``true``.
+                opted_in=include_mcp_json(spec) is True,
             )
             # A server KAS does not start at all (muted in the spec, so never
             # declared, or an mcp.json server the agent does not load) needs no

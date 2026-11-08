@@ -588,7 +588,7 @@ def test_a_settings_server_with_a_credential_reference_gets_a_private_backend(
     )
     assert set(inject) == {"atl"}
     out, wrapped = _rewrite(
-        {"name": "agent-a", "mcpServers": {}},
+        {"name": "agent-a", "mcpServers": {}, "tools": ["@atl"]},
         tmp_path,
         stub_servers=frozenset({"atl"}),
         pooling_enabled=True,
@@ -720,7 +720,7 @@ def test_a_settings_server_with_a_reference_is_injected_when_unresolvable(
     inject = _injectable_settings_servers({"mcpServers": {"atl": entry}}, frozenset({"atl"}))
     assert set(inject) == {"atl"}
     out, wrapped = _rewrite(
-        {"name": "agent-a", "mcpServers": {}},
+        {"name": "agent-a", "mcpServers": {}, "tools": ["@atl"]},
         tmp_path,
         stub_servers=frozenset({"atl"}),
         inject_servers=inject,

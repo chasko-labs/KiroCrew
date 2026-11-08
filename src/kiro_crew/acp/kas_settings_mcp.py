@@ -15,7 +15,9 @@ here closes one of those gaps from the Crew side; KAS is not changed.
   ``@server/<pattern>``, and every declared server without a ``timeout`` gets
   kiro-cli's 120 s default instead of KAS's 60 s.
 
-"Opted in" means the flag is ``true``. An agent FILE that leaves it out reads
+"Opted in" means the spec states the flag ``true``, under either spelling. The
+wire never carries that ``true`` (:func:`kiro_crew.acp.kas_agents.to_client_custom_agent`),
+so the opt-in travels in the stamp. An agent FILE that leaves it out reads
 as ``false`` on kiro-cli: the field is ``#[serde(default, alias =
 "includeMcpJson")] use_legacy_mcp_json: bool``, so a missing key is
 ``bool::default()``, and the mcp.json servers are loaded only behind
@@ -185,6 +187,7 @@ def stamp_settings_mcp(
     legacy_mcp_json: bool = False,
     notices: list[str] | None = None,
     unmatched: set[tuple[str, str]] | None = None,
+    opted_in: bool = False,
 ) -> list[dict[str, Any]]:
     """The batch with what :func:`finish_settings_mcp` needs stamped on the ACTIVE entry.
 
@@ -200,6 +203,8 @@ def stamp_settings_mcp(
     *notices* gets one session-start line per mcp.json file that could not be read.
     *unmatched* gets ``(server, pattern)`` for each file glob of a server this
     block carries that KAS cannot match (:func:`kas_tool_limits.unmatched_globs_notice`).
+    *opted_in* is the spec's own :func:`include_mcp_json` ``true``, which the wire
+    entry does not carry.
     """
     files = {
         n: e
@@ -211,6 +216,7 @@ def stamp_settings_mcp(
         "fileServers": {name: _glob_disabled_tools(entry) for name, entry in files.items()},
         "declared": sorted(n for n in declared if isinstance(n, str)),
         "legacy": legacy_mcp_json,
+        "optedIn": opted_in,
     }
     stamped = [
         (
@@ -316,11 +322,7 @@ def excluded_whole(agent: Mapping[str, Any]) -> set[str]:
     whatever it is told. Empty for an unstamped, opted-in or legacy entry.
     """
     stamp = agent.get(CREW_SETTINGS_MCP_KEY)
-    if (
-        not isinstance(stamp, dict)
-        or agent.get("includeMcpJson") is True
-        or stamp.get("legacy") is True
-    ):
+    if not isinstance(stamp, dict) or stamp.get("optedIn") is True or stamp.get("legacy") is True:
         return set()
     own = _declared_names(agent)
     mandatory = {n.strip() for n in os.environ.get(_MANDATORY_ENV, "").split(",") if n.strip()}

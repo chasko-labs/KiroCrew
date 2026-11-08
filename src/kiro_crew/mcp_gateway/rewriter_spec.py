@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Collection, Mapping
 
 from kiro_crew import platform_compat
+from kiro_crew.agent_sdk.mcp_refs import parse_tools_refs
 from kiro_crew.mcp_cleanup import mcp_entry_is_muted, mcp_entry_is_registry_governed
 from kiro_crew.mcp_gateway.hashing import STUB_FLAGS_FLAG, encode_target_args
 from kiro_crew.mcp_gateway.launch_approval import (
@@ -435,6 +436,39 @@ def _hashable_args(args_val: Any) -> tuple[str, ...]:
     )
 
 
+def _named_in_tools(servers: Mapping[str, Any], tools: Any) -> dict[str, Any]:
+    """The entries of *servers* an agent's ``tools`` names, by raw key or alias.
+
+    ``*``, as the whole value or as an entry, names every server. ``@server`` and
+    ``@server/tool`` name ``server``, read through
+    :func:`~kiro_crew.agent_sdk.mcp_refs.parse_tools_refs` like the mirrors'
+    ``ToolsAllowlist``. A missing or malformed ``tools`` names none.
+    """
+    grant_all, refs = parse_tools_refs(tools)
+    if grant_all or tools == "*":
+        return dict(servers)
+    named = frozenset(refs)
+    return {
+        name: entry
+        for name, entry in servers.items()
+        if name in named or mcp_server_alias(name) in named
+    }
+
+
+def _excludes_global_mcp_json(spec: Mapping[str, Any]) -> bool:
+    """True when kiro-cli merges nothing from the global ``settings/mcp.json``
+    into the agent *spec* describes.
+
+    kiro-cli reads ``useLegacyMcpJson`` as the deprecated alias of
+    ``includeMcpJson``, so the alias decides when ``includeMcpJson`` is absent.
+    Only a literal ``false`` opts out: an absent key or a non-bool value is read
+    as kiro-cli's default of true. A spec that sets both keys is refused by
+    kiro-cli as a duplicate field, so which one wins here does not matter."""
+    if "includeMcpJson" in spec:
+        return spec["includeMcpJson"] is False
+    return spec.get("useLegacyMcpJson") is False
+
+
 def _rewrite_single_spec(
     spec: dict[str, Any],
     *,
@@ -475,21 +509,31 @@ def _rewrite_single_spec(
     agents get pooled coverage WITHOUT relying on kiro-cli merging the global
     settings — which is what produced the duplicate, empty-``--agent`` stub.
 
-    An agent whose spec sets ``includeMcpJson: false`` gets none of them:
-    kiro-cli does not merge the global file into that agent, so there is no raw
-    entry for a stub to take precedence over, and every wrapped overlay entry is
-    sent at ``session/new``. Injecting there would mount servers the agent
-    excluded, and a tool name one of them shares with the agent's own server
-    leaves one of the two with no tools. Only a literal ``false`` opts out,
-    because kiro-cli reads an absent flag as true.
+    An agent whose spec sets ``includeMcpJson: false``, or its deprecated alias
+    ``useLegacyMcpJson: false``, gets none of them: kiro-cli does not merge the
+    global file into that agent, so there is no raw entry for a stub to take
+    precedence over, and every wrapped overlay entry is sent at
+    ``session/new``. Injecting there would mount servers the agent excluded, and
+    a tool name one of them shares with the agent's own server leaves one of the
+    two with no tools. Only a literal ``false`` opts out, because kiro-cli reads
+    an absent flag as true (see :func:`_excludes_global_mcp_json`).
+
+    Any other agent gets only the ones its ``tools`` names
+    (:func:`_named_in_tools`). The session mounts a wrapped entry it is sent at
+    ``session/new`` without asking ``tools``, so a stub for a server the author
+    left out of ``tools`` would be offered and callable anyway. Leaving one out
+    costs nothing ``tools`` could reach: for an agent with ``includeMcpJson: true``
+    the host's own ``mcp.json`` merge still starts the server, unpooled.
     """
     agent_name = spec.get("name") or ""
     servers = spec.get("mcpServers") or {}
     if not isinstance(servers, dict):
         servers = {}
     inject = inject_servers or {}
-    if spec.get("includeMcpJson") is False:
+    if _excludes_global_mcp_json(spec):
         inject = {}
+    elif inject:
+        inject = _named_in_tools(inject, spec.get("tools"))
     if not servers and not inject:
         return spec, 0
 
@@ -870,9 +914,9 @@ def _injectable_settings_servers(
     scope_muted: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Return ``{raw_name: raw_entry}`` of stdio servers in the global
-    ``settings/mcp.json`` that must be INJECTED into every per-agent overlay
-    whose agent reads that file (an ``includeMcpJson: false`` agent does not;
-    see :func:`_rewrite_single_spec`).
+    ``settings/mcp.json`` that may be INJECTED into a per-agent overlay. Each
+    agent gets the ones its ``tools`` names, and an ``includeMcpJson: false`` or
+    ``useLegacyMcpJson: false`` agent gets none (see :func:`_rewrite_single_spec`).
 
     Each returned server is wrapped with the receiving agent's own name, so the
     stub carries a correct ``--agent`` identity, and injected at ACP

@@ -1792,6 +1792,24 @@ A cached plain-flag overlay fails the rewriter fingerprint and is regenerated. T
 interpreter path in the entry's `command` is the one value the codec cannot
 cover: the CLI runs it, not the stub.
 
+### A settings server is pooled only into an agent whose `tools` names it
+
+The rewriter wraps each stubbed stdio server of `~/.kiro/settings/mcp.json` into the
+overlays of the agents that read that file (`rewriter_spec._injectable_settings_servers`),
+and `session_servers.pooled_session_servers` sends every wrapped overlay entry at
+`session/new`, where the session mounts it without asking `tools`. So a settings
+server enters an agent's overlay only when that agent's `tools` names it (`*`,
+`@server` or `@server/tool`, under the raw key or its alias; `rewriter_spec._named_in_tools`),
+the allowlist a mirror applies to its own stubs (`session_mcp.ToolsAllowlist`), and an
+agent with `includeMcpJson: false` gets none. A server left out is one the agent's `tools`
+cannot reach anyway; with `includeMcpJson: true` the host's own `mcp.json` merge still
+starts it, unpooled. KAS needs the same on its custom agent: its `includeMcpJson: true`
+mounts every MCP tool on top of `tools`, so `acp/kas_agents.py` forwards that flag only
+as `false`. The opt-in still decides which `mcp.json` servers a KAS agent may start:
+`acp/harness/kas.py` stamps the spec's own `true` (`kas_settings_mcp.stamp_settings_mcp`),
+and `kas_settings_mcp.excluded_whole` reads it there, so a `tools` ref still reaches its
+server.
+
 ### Overlay scope: user-level agents only
 
 The rewriter reads `~/.kiro/agents/` and writes one overlay per agent NAME, so the
