@@ -1,0 +1,1 @@
+{"direction": "adapter", "message": {"jsonrpc": "2.0", "id": 4, "result": {"modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "On request"}, {"id": "readOnly", "name": "Read-only"}, {"id": "plan", "name": "Plan"}, {"id": "bypassApprovals", "name": "Auto-approve"}, {"id": "rejectApprovals", "name": "Reject prompts"}]}}}}
