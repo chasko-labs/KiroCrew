@@ -475,6 +475,21 @@ checked at runtime as well as statically: it composes its array on `AcpRuntime`,
 not at `AcpClient`'s call sites, and `AcpRuntime._guard_unresolved_mcp_refs`, the
 runtime-path twin of `AcpClient`'s, runs the same guard from
 `_finish_create_session` and `load_session`.
+The doctor also judges every authored agent in the agents directory on the backend
+in use (Kiro Crew's own specs, Bot service agents and derived copies aside, at most
+64), with Kiro Crew's default servers modelled on kiro-cli and KAS as a spawn adds
+them but without recording the permission decisions a spawn records. On kiro-cli it
+also counts the servers of the global settings `mcp.json` for an agent whose
+`includeMcpJson` is not `false`, since kiro-cli merges that file into such an
+agent. It prints a row only for an agent with a ref left over, in the same hedged
+verdict: Kiro Crew's projection delivers none of them, and the harness may mount a
+same-named server from its own configuration. When an unresolved ref names one of
+Kiro Crew's control-plane servers (`kirocrew-core`, `kirocrew-cron`), a new
+dashboard chat session also gets one notice row naming it
+(`dashboard/chat_turn/mcp_session._notice_unresolved_control_plane`), unless the
+session's settings file withholds Kiro Crew's servers, which the seed-declined
+notice already says; any other unresolved ref stays in the log, the report and the
+doctor.
 
 **A provider must declare:** its injection channel and precedence rule, its
 server shape, its env-expansion semantics, its loader strictness, which field (if
