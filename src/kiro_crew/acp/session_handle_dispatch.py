@@ -1046,6 +1046,13 @@ async def _dispatch_events(
                 # no session and was fanned out to co-tenants is not this
                 # session's own.
                 yield AcpEvent(kind=EVENT_CLEAR_STATUS, runtime_global=msg.fanout_no_owner)
+            elif action == "agent_switched" and extract_command_result and msg.fanout_no_owner:
+                # A ``commands/execute`` turn proves this handle issued the
+                # switch, and its OWNED command result reports it below. The
+                # notification was fanned out ownerless (a second queue is
+                # registered), and surfacing it would read as a peer's switch to a
+                # consumer that gates its bookkeeping on ``runtime_global``.
+                pass
             elif action == "agent_switched":
                 saw_agent_switch = True
                 params = msg.params or {}

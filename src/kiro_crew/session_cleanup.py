@@ -792,7 +792,7 @@ class SessionCleanup:
         # sharing the one /proc snapshot built here whenever either pass has work
         # -- a spare can be over the ceiling with no chat session open at all.
         spare_providers = _spare.spare_providers_over_ceiling_eligible(self)
-        victims: list[tuple[str, int, int, SessionEntry]] = []
+        victims: list[tuple[str, int, int, int, SessionEntry]] = []
         loop = asyncio.get_running_loop()
         measure: Callable[[int], int] | None = None
         if candidates or spare_providers:
@@ -813,7 +813,7 @@ class SessionCleanup:
                         pid,
                     )
                     rss_by_pid[pid] = rss
-                if rss > self.state.rss_max_mb:
+                if rss > (limit := _spare.rss_limit_for(self, pid)):
                     previous = last_recycles.pop(key, None)
                     if previous is not None:
                         self._deps.logger.warning(
@@ -822,11 +822,11 @@ class SessionCleanup:
                             "session.watchdog_rss_max_mb may be set too low for this workload",
                             key,
                             rss,
-                            self.state.rss_max_mb,
+                            limit,
                             now - previous[0],
                             previous[1],
                         )
-                    victims.append((key, pid, rss, session))
+                    victims.append((key, pid, rss, limit, session))
 
         # One RECLAIM per runtime per tick. The threshold was crossed by a
         # process, and every session on it reads the same figure, so recycling
@@ -836,7 +836,7 @@ class SessionCleanup:
         # reset that actually happened, not on an attempt: a victim the guards
         # below decline has reclaimed nothing, so a co-tenant is still eligible.
         recycled_pids: set[int] = set()
-        for key, pid, rss, session in victims:
+        for key, pid, rss, limit, session in victims:
             if pid in recycled_pids:
                 self._deps.logger.debug(
                     "RSS recycle: runtime %d already recycled a session this tick; "
@@ -857,7 +857,7 @@ class SessionCleanup:
                         "but has attached sub-agent work; skipping",
                         key,
                         rss,
-                        self.state.rss_max_mb,
+                        limit,
                     )
                     continue
                 # Ask the injection counter AGAIN, here. The wrapper above asks
@@ -891,14 +891,14 @@ class SessionCleanup:
                 if (
                     launch is not None
                     and launch[0] <= hold
-                    and rss <= self.state.rss_max_mb * HARNESS_BACKGROUND_WORK_HARD_CEILING_FACTOR
+                    and rss <= limit * HARNESS_BACKGROUND_WORK_HARD_CEILING_FACTOR
                 ):
                     self._deps.logger.info(
                         "RSS recycle: session %s tree rss=%dMB exceeds %dMB but its "
                         "harness launched background work %.0fs ago (%s); skipping",
                         key,
                         rss,
-                        self.state.rss_max_mb,
+                        limit,
                         launch[0],
                         launch[1],
                     )
@@ -923,7 +923,7 @@ class SessionCleanup:
                     "RSS recycle: session %s tree rss=%dMB exceeds %dMB",
                     key,
                     rss,
-                    self.state.rss_max_mb,
+                    limit,
                 )
                 self._deps.stats_factory().inc_session_cleaned()
                 reason = f"memory limit ({rss}MB)"

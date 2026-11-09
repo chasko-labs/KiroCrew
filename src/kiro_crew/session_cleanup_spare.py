@@ -23,6 +23,21 @@ if TYPE_CHECKING:
     from kiro_crew.session_cleanup import SessionCleanup
 
 
+def rss_limit_for(cleanup: SessionCleanup, pid: int) -> int:
+    """The RSS ceiling for runtime *pid*, scaled by how many chat sessions it serves.
+
+    ``session.watchdog_rss_max_mb`` is a budget for ONE session's runtime. A shared
+    chat runtime (``chat_runtime_sharing`` preview) serves several, and the figure
+    compared is the whole process tree, so an unscaled comparison would charge one
+    session's budget for N sessions' memory and recycle a healthy session every tick
+    once sharing begins. The count is the chat LEASES on the pid, so an unshared
+    runtime (one lease) and a subagent's tenancy (no lease) keep the plain ceiling.
+    """
+    from kiro_crew.runtime_ownership import RUNTIME_OWNERSHIP
+
+    return cleanup.state.rss_max_mb * max(1, RUNTIME_OWNERSHIP.leases_on_pid(pid))
+
+
 async def build_rss_measure(
     cleanup: SessionCleanup, loop: asyncio.AbstractEventLoop
 ) -> Callable[[int], int]:

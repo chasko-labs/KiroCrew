@@ -75,6 +75,7 @@ BUDGET: dict[str, int] = {
     "test/test_chat_runner_composition_contract.py": 5,
     "test/test_chat_runner_early_recovery_actor.py": 1,
     "test/test_chat_turn_timeout_consistency.py": 1,
+    "test/test_compact_deferred_wait_gate.py": 1,  # one source-contract check on _run_chat (hold before the dispatch gates, released after the deferred wait)
     "test/test_credential_redaction_switch.py": 1,
     "test/test_credential_sources.py": 1,
     "test/test_crew_log_emit.py": 2,
