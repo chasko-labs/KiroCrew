@@ -89,7 +89,7 @@ the gateway peer proof, the owner requests (`token`, `logout`, `update approve`)
 | `cli_server_peer.py` | the proven route to the gateway every local-secret send takes: `_owner_verified_secret_urlopen` and its connected-peer proofs, and `_CLI_LOOPBACK` |
 | `cli_server_requests.py` | the commands that make one owner request of the running dashboard with the local secret: `token` (with the session URLs it prints), `logout`, `update approve` |
 | `cli_server_stop.py` | finding and stopping this home's gateway (`stop`, `gateway-pid`): the authenticated shutdown, the pid verification, and the service-alias and lock-holder refusals `restart` shares |
-| `cli_server_restart.py` | `restart`: the wait for the incumbent to exit, the detached spawn, the readiness probe and its deadline, the `gateway.log` relay, the printed sign-in URL |
+| `cli_server_restart.py` | `restart`: the line naming the cron runs a restart interrupts, printed before either path signals or refuses anything and so worded as what a restart does (`_print_running_cron_runs`: each in-flight marker under `cron-running/` whose writer is alive, with the UTC time the run started; the stop files such a run `cancelled` and does not retry it, though a cron-expression job runs again at once when the gateway is back within the minute that run was due, see [learn-cron-dashboard](learn-cron-dashboard.md)), the wait for the incumbent to exit, the detached spawn, the readiness probe and its deadline, the `gateway.log` relay, the printed sign-in URL |
 | `cli_server_update.py` | `update`: the git, wheel and managed-venv paths, the memory snapshot taken first, the agent-config refresh after |
 
 `kiro_crew.cli_server` is a mirror facade over those five owners, lowest layer first.
