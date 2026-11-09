@@ -72,6 +72,7 @@ from .redaction import (
     _text_contains_bare_secret,
     redact_credentials,
 )
+from .redaction_entropy import _outlook_web_link_end
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +400,21 @@ def _exfil_url_warning(
         # under the heuristics rather than riding free — zeroing this was a
         # bypass wide enough for a 40-char alphanumeric secret.
         heuristic_query = _slack_alias
+    elif (
+        is_https
+        and not port
+        and (_owa_end := _outlook_web_link_end(_owa_url := f"https://{_dom}{path_and_query}"))
+        is not None
+    ):
+        # Outlook's own `webLink` (``_OWA_WEB_LINK_QUERIES``): a fixed path, fixed
+        # fields in a fixed order, and an id that decodes as one whole Exchange
+        # entry id with no key-shaped piece, judged by the credential pass's own
+        # matcher. Like the Slack carve-out it VALIDATES the bytes rather than
+        # trusting the host: the id's free fields are GUIDs and counters of at
+        # most 22 bytes each, less than the sub-200-char query any URL may carry
+        # past these heuristics today. Whatever the scan glued after the link (a
+        # sentence's `.`, a fragment) stays under the heuristics.
+        heuristic_query = _owa_url[_owa_end:]
     elif _dom in exempt_hosts:
         heuristic_query = ""
     else:
