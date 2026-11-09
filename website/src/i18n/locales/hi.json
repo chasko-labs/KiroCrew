@@ -7595,6 +7595,8 @@
     },
     "instanceTabBar": {
       "chain_via": "{{via}} › {{name}}",
+      "group_my_crews": "मेरे क्रू",
+      "group_this_computer": "यह कंप्यूटर",
       "connected": "कनेक्टेड",
       "connected_refresh": "कनेक्ट है · रिफ़्रेश {{time}}",
       "connected_refreshing": "कनेक्टेड · रिफ़्रेश हो रहा है…",
@@ -7622,7 +7624,6 @@
       "unreachable_via": "पहुंच नहीं रहा — {{via}} बंद है"
     },
     "relayCrews": {
-      "title": "रिले क्रू",
       "list_label": "रिले से खोले जा सकने वाले रिमोट क्रू",
       "type_personal": "निजी",
       "type_team": "टीम",
@@ -7630,7 +7631,6 @@
       "offline": "ऑफ़लाइन",
       "reconnecting": "फिर से कनेक्ट हो रहा है",
       "last_seen": "आख़िरी बार देखा गया {{when}}",
-      "open": "खोलो",
       "open_crew": "{{name}} खोलो",
       "empty": "खोलने के लिए कोई रिमोट क्रू नहीं है।",
       "refusal_not_granted": "अब तुम्हारे पास इस क्रू की पहुंच नहीं है।",
@@ -7642,8 +7642,9 @@
       "refusal_generic": "यह क्रू नहीं खुल सका।",
       "refusal_list_generic": "तुम्हारे रिमोट क्रू लोड नहीं हो सके।",
       "try_again": "फिर कोशिश करो",
-      "details": "विवरण",
-      "request_id": "अनुरोध आईडी: {{id}}"
+      "request_id": "अनुरोध आईडी: {{id}}",
+      "group_team_crews": "टीम क्रू",
+      "opens_own_window": "अपनी अलग विंडो में खुलता है"
     },
     "instancesViewport": {
       "connecting": "कनेक्ट हो रहा है…",

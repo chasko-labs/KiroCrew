@@ -7389,6 +7389,8 @@
     },
     "instanceTabBar": {
       "chain_via": "{{via}} › {{name}}",
+      "group_my_crews": "マイクルー",
+      "group_this_computer": "このコンピューター",
       "connected": "接続済み",
       "connected_refresh": "接続済み · {{time}} に更新",
       "connected_refreshing": "接続済み · 更新中…",
@@ -7416,7 +7418,6 @@
       "unreachable_via": "到達不可 — {{via}} が停止中"
     },
     "relayCrews": {
-      "title": "リレー経由のクルー",
       "list_label": "リレー経由で開けるリモートクルー",
       "type_personal": "個人",
       "type_team": "チーム",
@@ -7424,7 +7425,6 @@
       "offline": "オフライン",
       "reconnecting": "再接続中",
       "last_seen": "最終確認 {{when}}",
-      "open": "開く",
       "open_crew": "{{name}} を開く",
       "empty": "開けるリモートクルーはありません。",
       "refusal_not_granted": "このクルーへのアクセス権がなくなりました。",
@@ -7436,8 +7436,9 @@
       "refusal_generic": "このクルーを開けませんでした。",
       "refusal_list_generic": "リモートクルーを読み込めませんでした。",
       "try_again": "もう一度試してください",
-      "details": "詳細",
-      "request_id": "リクエスト ID: {{id}}"
+      "request_id": "リクエスト ID: {{id}}",
+      "group_team_crews": "チームクルー",
+      "opens_own_window": "専用のウィンドウで開きます"
     },
     "instancesViewport": {
       "connecting": "接続中…",

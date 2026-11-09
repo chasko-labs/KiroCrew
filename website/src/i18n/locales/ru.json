@@ -8007,6 +8007,8 @@
     },
     "instanceTabBar": {
       "chain_via": "{{via}} › {{name}}",
+      "group_my_crews": "Мои команды",
+      "group_this_computer": "Этот компьютер",
       "connected": "подключено",
       "connected_refresh": "подключено · обновление {{time}}",
       "connected_refreshing": "подключено · обновление…",
@@ -8034,7 +8036,6 @@
       "unreachable_via": "недоступен — {{via}} не работает"
     },
     "relayCrews": {
-      "title": "Команды через ретранслятор",
       "list_label": "Удалённые команды, которые можно открыть через ретранслятор",
       "type_personal": "Личная",
       "type_team": "Командная",
@@ -8042,7 +8043,6 @@
       "offline": "не в сети",
       "reconnecting": "переподключение",
       "last_seen": "последний раз: {{when}}",
-      "open": "Открыть",
       "open_crew": "Открыть {{name}}",
       "empty": "Нет удалённых команд для открытия.",
       "refusal_not_granted": "У тебя больше нет доступа к этой команде.",
@@ -8054,8 +8054,9 @@
       "refusal_generic": "Не удалось открыть эту команду.",
       "refusal_list_generic": "Не удалось загрузить твои удалённые команды.",
       "try_again": "Повторить",
-      "details": "Подробности",
-      "request_id": "ID запроса: {{id}}"
+      "request_id": "ID запроса: {{id}}",
+      "group_team_crews": "Общие команды",
+      "opens_own_window": "Открывается в отдельном окне"
     },
     "instancesViewport": {
       "connecting": "Подключение…",

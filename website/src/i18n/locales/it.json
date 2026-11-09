@@ -7801,6 +7801,8 @@
     },
     "instanceTabBar": {
       "chain_via": "{{via}} › {{name}}",
+      "group_my_crews": "Le mie crew",
+      "group_this_computer": "Questo computer",
       "connected": "connesso",
       "connected_refresh": "connesso · aggiornamento {{time}}",
       "connected_refreshing": "connesso · aggiornamento…",
@@ -7828,7 +7830,6 @@
       "unreachable_via": "non raggiungibile — {{via}} è giù"
     },
     "relayCrews": {
-      "title": "Crew via relay",
       "list_label": "Crew remote che puoi aprire tramite il relay",
       "type_personal": "Personale",
       "type_team": "Team",
@@ -7836,7 +7837,6 @@
       "offline": "offline",
       "reconnecting": "riconnessione",
       "last_seen": "visto l'ultima volta {{when}}",
-      "open": "Apri",
       "open_crew": "Apri {{name}}",
       "empty": "Nessuna crew remota da aprire.",
       "refusal_not_granted": "Non hai più accesso a questa crew.",
@@ -7848,8 +7848,9 @@
       "refusal_generic": "Impossibile aprire questa crew.",
       "refusal_list_generic": "Impossibile caricare le tue crew remote.",
       "try_again": "Riprova",
-      "details": "Dettagli",
-      "request_id": "ID richiesta: {{id}}"
+      "request_id": "ID richiesta: {{id}}",
+      "group_team_crews": "Crew del team",
+      "opens_own_window": "Si apre in una finestra a sé"
     },
     "instancesViewport": {
       "connecting": "Connessione in corso…",

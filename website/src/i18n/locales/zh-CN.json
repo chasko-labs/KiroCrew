@@ -7389,6 +7389,8 @@
     },
     "instanceTabBar": {
       "chain_via": "{{via}} › {{name}}",
+      "group_my_crews": "我的 Crew",
+      "group_this_computer": "这台电脑",
       "connected": "已连接",
       "connected_refresh": "已连接 · {{time}} 后刷新",
       "connected_refreshing": "已连接 · 刷新中…",
@@ -7416,7 +7418,6 @@
       "unreachable_via": "连不上 — {{via}} 挂了"
     },
     "relayCrews": {
-      "title": "中继 Crew",
       "list_label": "可通过中继打开的远程 Crew",
       "type_personal": "个人",
       "type_team": "团队",
@@ -7424,7 +7425,6 @@
       "offline": "离线",
       "reconnecting": "正在重新连接",
       "last_seen": "最后出现于 {{when}}",
-      "open": "打开",
       "open_crew": "打开 {{name}}",
       "empty": "没有可打开的远程 Crew。",
       "refusal_not_granted": "你已无权访问此 Crew。",
@@ -7436,8 +7436,9 @@
       "refusal_generic": "无法打开此 Crew。",
       "refusal_list_generic": "无法加载你的远程 Crew。",
       "try_again": "重试",
-      "details": "详情",
-      "request_id": "请求 ID：{{id}}"
+      "request_id": "请求 ID：{{id}}",
+      "group_team_crews": "团队 Crew",
+      "opens_own_window": "在单独的窗口中打开"
     },
     "instancesViewport": {
       "connecting": "正在连接…",
