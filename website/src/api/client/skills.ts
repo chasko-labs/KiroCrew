@@ -25,6 +25,27 @@ export interface SkillScriptValidation {
   report: Record<string, string[]>
 }
 
+/** One installed folder as `GET /api/agent-plugins` reports it. `state` is the
+ *  loader's verdict; `reason` explains `invalid` and `not-a-plugin` in the
+ *  loader's own English; `legacy_power` marks a `POWER.md` Power. `loaded` is
+ *  false for every record: Kiro Crew lists plugins and loads none. */
+export interface AgentPluginRecord {
+  name: string
+  state: 'invalid' | 'not-a-plugin' | 'off'
+  reason: string | null
+  legacy_power: boolean
+  loaded: boolean
+  version: string | null
+  description: string | null
+  servers: { name: string; type: string; command?: string; url?: string }[]
+  skills: { name: string; description: string }[]
+  issues: { component: string; entry: string | null; message: string }[]
+}
+
+export interface AgentPluginsResponse {
+  plugins: AgentPluginRecord[]
+}
+
 export function createSkillsEndpoints({ get, post, put, del, j, jfetch: fetch }: ClientTransport) {
   const library = {
     // Prompts (Agent SOPs)
@@ -88,6 +109,10 @@ export function createSkillsEndpoints({ get, post, put, del, j, jfetch: fetch }:
       put('/api/skills/' + name.split('/').map(encodeURIComponent).join('/'),
           { content, base_hash: baseHash }).then(j),
     deleteSkill: (name: string) => del('/api/skills/' + name.split('/').map(encodeURIComponent).join('/')).then(j),
+    /** Installed Kiro Powers and Agent Plugins, read-only (Customize > Kiro
+     *  Powers). Owner-only: anyone else gets 403 `dashboard_owner_required`.
+     *  Nothing listed is loaded into a session. */
+    agentPlugins: () => get('/api/agent-plugins').then(j) as Promise<AgentPluginsResponse>,
   }
 
   const curation = {

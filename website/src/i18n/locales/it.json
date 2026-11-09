@@ -12502,6 +12502,8 @@
       "workflows_label": "Workflow",
       "workflows_description": "Crea, modifica ed esegui workflow riutilizzabili per gli agenti",
       "connections_description": "Connetti servizi ufficiali e gestisci server MCP personalizzati",
+      "powers_label": "Kiro Powers",
+      "powers_description": "Powers e Agent Plugins installati per Kiro, elencati ma non caricati",
       "connections_label": "Connessioni",
       "crews_description": "Agenti IA sempre attivi",
       "crews_label": "Bot",
@@ -16881,6 +16883,23 @@
       "unread": "Non letti"
     },
     "overview": {
+      "kiroPowersTab": {
+        "intro": "Letti da ~/.kiro/powers. {{productName}} li elenca ma non ne carica ancora nessuno, quindi le loro competenze e i loro server MCP non arrivano alle tue sessioni.",
+        "not_loaded": "Non caricato",
+        "reason_legacy_power": "Un Power legacy in formato POWER.md, non un Agent Plugin. {{productName}} non carica i Powers in formato POWER.md.",
+        "reason_no_manifest": "Questa cartella non ha un plugin.json, quindi non è un Agent Plugin.",
+        "reason_invalid": "Questo plugin non è valido, quindi nessuna sua parte può essere usata: {{reason}}",
+        "reason_valid": "Un Agent Plugin valido. {{productName}} non carica ancora gli Agent Plugins.",
+        "would_add_skills": "Competenze che aggiungerebbe",
+        "would_add_servers": "Server MCP che aggiungerebbe",
+        "problems_found": "Problemi rilevati",
+        "empty_title": "Nessun Kiro Power installato",
+        "empty_subtitle": "I Powers che installi in Kiro IDE o con kiro-cli compaiono qui.",
+        "failed_to_load": "Impossibile leggere i Kiro Powers installati",
+        "retry": "Riprova",
+        "owner_only": "Solo il proprietario della dashboard può vedere i Kiro Powers installati.",
+        "list_label": "Kiro Powers installati"
+      },
       "workflowLibrary": {
         "adapted_from": "Adattato da",
         "create_draft": "Crea bozza",
