@@ -408,6 +408,31 @@ def _build_response_preferences_section(cfg: "KiroCrewConfig") -> str:
     )
 
 
+def reply_language_refresh(cfg: "KiroCrewConfig") -> str:
+    """The follow-up turn's short ``## Reply language`` reminder, or ``""``.
+
+    The full frame rides only session start, resume and post-compaction. A long
+    session's later turns -- auto-nudge and monitor cycles, work-ledger wakes,
+    worker reports, crons -- carry English nudge text and tool output, and the
+    model drifts to English without this line. Only the language half repeats:
+    the style rules are long and their loss is not the reported failure.
+    """
+    code = getattr(getattr(cfg, "dashboard", None), "preferred_language", "")
+    if not _reply_language_rule(code):
+        return ""
+    from kiro_crew.config.sections import PREFERRED_LANGUAGES
+
+    name = PREFERRED_LANGUAGES[code]
+    return (
+        f"{_RESPONSE_PREFERENCES_HEADER}\n"
+        "## Reply language\n\n"
+        f"Reply in {name}, as set at session start. English tool output, logs or "
+        "nudge text in this turn do not change it. Commit messages, pull "
+        "request text and code comments keep the project's own language.\n"
+        f"{_RESPONSE_PREFERENCES_FOOTER}\n\n"
+    )
+
+
 def runtime_identity_block(agent_label: str, runtime: str) -> str:
     """The session-start ``[CURRENT AGENT]`` / ``[RUNTIME]`` block.
 
