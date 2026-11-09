@@ -1,6 +1,6 @@
 """An agent's ``welcomeMessage`` renders once when the agent becomes active.
 
-Two halves, and the split matters:
+Three parts, and the split matters:
 
 * the READER (``agent_discovery.spec_welcome_message`` /
   ``agent_welcome_message``) — coercion, the length ceiling, and which of two
@@ -8,7 +8,10 @@ Two halves, and the split matters:
 * the EMITTER (``chat_runner._surface_agent_welcome`` and its two call sites) —
   that the hint lands as a durable ``notice`` row the model never replays, that
   it lands exactly once per activation, and that untrusted text is redacted
-  before it reaches the persisted window.
+  before it reaches the persisted window;
+* the WELCOME PAGE (``dashboard.agent_welcome``): an unstarted chat writes no
+  row, its slot summary carries the greeting instead, and the row is tagged so
+  the website's turn fold keeps it in view.
 
 ``agent_welcome_message`` is the field's only reader, so the reader is covered
 here; an app whose bundled agents ship values for it pins those in its own
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,6 +41,7 @@ from kiro_crew.agent_discovery import (
 from kiro_crew.dashboard.state import _TRANSIENT_ROLES
 
 _HINT = "Drop a URL and I will turn it into slides."
+_WEBSITE = Path(__file__).resolve().parents[1] / "website" / "src"
 
 
 @pytest.fixture
@@ -618,3 +623,288 @@ class TestWelcomeMessageInARunnerTurn:
         greeting = next(i for i, c in enumerate(contents) if c == _HINT)
         assert greeting > switched, "the greeting must read after the line announcing the switch"
         assert slot.messages[greeting]["role"] == "notice"
+
+
+class TestTheWelcomeRowIsTagged:
+    """The row names its kind, so the dashboard's turn fold can keep it in view."""
+
+    @pytest.mark.asyncio
+    async def test_the_row_carries_the_agent_welcome_kind(self, monkeypatch, tmp_path) -> None:
+        """Under the default collapse-all setting every untagged row before the
+        answer folds, and the cold start writes this one inside the first turn."""
+        from kiro_crew.dashboard.agent_welcome import AGENT_WELCOME_KIND
+        from kiro_crew.dashboard.chat_runner import _surface_agent_welcome
+
+        state, slot, _ = TestSurfaceAgentWelcome._slot(monkeypatch, tmp_path, _HINT)
+        await _surface_agent_welcome(state, slot, "helper")
+
+        row = next(m for m in slot.messages if m.get("content") == _HINT)
+        assert row["meta"]["kind"] == AGENT_WELCOME_KIND == "agent_welcome"
+
+    def test_the_website_keeps_the_kind_out_of_the_turn_fold(self) -> None:
+        """A wire token: nothing links the two sides but the string."""
+        from kiro_crew.dashboard.agent_welcome import AGENT_WELCOME_KIND
+
+        source = (_WEBSITE / "pages" / "chat" / "TurnBlock.tsx").read_text(encoding="utf-8")
+        predicate = source.split("const isAlwaysVisible", 1)[1].split("\n)\n", 1)[0]
+        assert f"it.msg.meta?.kind === '{AGENT_WELCOME_KIND}'" in predicate
+
+
+class TestTheWelcomePageShowsTheGreeting:
+    """An unstarted chat writes no row; its slot summary carries the greeting.
+
+    A pick on an empty chat is no boundary, and a row there would replace the
+    welcome page, stack one greeting per agent tried and count as history for
+    the member-memory gates. So the slot create and the picker commit write
+    nothing into the transcript and ship the greeting as ``welcome_message``,
+    and the workspace and project switches read it again for the new project.
+    """
+
+    @staticmethod
+    def _state(monkeypatch, tmp_path):
+        from kiro_crew.dashboard import chat_handlers
+
+        TestWelcomeMessageInARunnerTurn._install_agent("helper", _HINT)
+        state = _make_state(tmp_path)
+        state.sessions.reset = AsyncMock(return_value=True)
+        monkeypatch.setattr(chat_handlers, "schedule_eager_spawn", lambda *a, **kw: None)
+        return state
+
+    @staticmethod
+    async def _post(state, path: str, body: dict) -> tuple[int, dict]:
+        from aiohttp.test_utils import TestClient, TestServer
+        from chat_test_helpers import _make_app_with_agent_routes
+        from dashboard_owner_helpers import as_owner
+
+        from kiro_crew.dashboard.chat import api_chat_slot_project
+        from kiro_crew.testing.wait import await_until
+
+        app = as_owner(_make_app_with_agent_routes(state))
+        app.router.add_post("/api/chat/slots/{slot}/project", api_chat_slot_project)
+        async with TestClient(TestServer(app)) as client:
+            response = await await_until(asyncio.ensure_future(client.post(path, json=body)))
+            return response.status, await response.json()
+
+    @pytest.mark.asyncio
+    async def test_a_chat_created_on_the_agent_shows_it_and_writes_no_row(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        state = self._state(monkeypatch, tmp_path)
+        status, body = await self._post(
+            state,
+            "/api/chat/slots",
+            {"name": "welcome-new", "agent": "helper", "agent_kind": "template"},
+        )
+
+        assert status == 200, body
+        slot = state._slots["welcome-new"]
+        assert slot.messages == []
+        assert body["welcome_message"] == _HINT
+        assert state.serialize_slot(slot)["welcome_message"] == _HINT
+
+    @pytest.mark.asyncio
+    async def test_picking_the_agent_on_an_empty_chat_shows_it_and_writes_no_row(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        state = self._state(monkeypatch, tmp_path)
+        status, body = await self._post(state, "/api/chat/slots", {"name": "welcome-pick"})
+        assert status == 200, body
+        assert body["welcome_message"] == ""
+
+        status, body = await self._post(
+            state,
+            "/api/chat/slots/welcome-pick/agent",
+            {"agent": "helper", "agent_kind": "template"},
+        )
+
+        assert status == 200 and body["ok"], body
+        slot = state._slots["welcome-pick"]
+        assert slot.messages == [], "a pick on an unstarted chat writes no row"
+        assert state.serialize_slot(slot)["welcome_message"] == _HINT
+
+    @pytest.mark.asyncio
+    async def test_picking_the_default_again_takes_the_greeting_away(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        state = self._state(monkeypatch, tmp_path)
+        await self._post(
+            state,
+            "/api/chat/slots",
+            {"name": "welcome-back", "agent": "helper", "agent_kind": "template"},
+        )
+        status, body = await self._post(state, "/api/chat/slots/welcome-back/agent", {"agent": ""})
+
+        assert status == 200 and body["ok"], body
+        slot = state._slots["welcome-back"]
+        assert slot.messages == []
+        assert state.serialize_slot(slot)["welcome_message"] == ""
+
+    @staticmethod
+    def _project(tmp_path, name: str, hint: str = "") -> str:
+        """A project directory, holding its own ``helper`` spec when *hint* is set."""
+        root = tmp_path / name
+        root.mkdir()
+        if hint:
+            (_project_agents_dir(root) / "helper.json").write_text(
+                json.dumps({"name": "helper", "welcomeMessage": hint}), encoding="utf-8"
+            )
+        clear_list_agents_cache()
+        return os.path.realpath(root)
+
+    async def _switch_project(self, monkeypatch, tmp_path, route: str, project: str):
+        """Create a chat on ``helper``, then move it to *project* through *route*.
+
+        The workspace route sets the workspace's own directory as the project, so
+        the workspace ``ws2`` is pointed at *project*.
+        """
+        from kiro_crew.dashboard import chat_handlers
+
+        state = self._state(monkeypatch, tmp_path)
+        key = f"welcome-{route}"
+        status, body = await self._post(
+            state, "/api/chat/slots", {"name": key, "agent": "helper", "agent_kind": "template"}
+        )
+        assert status == 200 and body["welcome_message"] == _HINT, body
+        slot = state._slots[key]
+        assert slot.project != project
+        if route == "workspace":
+            real = chat_handlers.default_project_dir
+            monkeypatch.setattr(
+                chat_handlers,
+                "default_project_dir",
+                lambda workspace=None: project if workspace == "ws2" else real(workspace),
+            )
+            status, body = await self._post(
+                state, f"/api/chat/slots/{key}/workspace", {"workspace": "ws2"}
+            )
+        else:
+            monkeypatch.setattr(chat_handlers, "_save_recent_project", lambda _project: None)
+            status, body = await self._post(
+                state, f"/api/chat/slots/{key}/project", {"project": project}
+            )
+        assert status == 200 and body["ok"], body
+        assert slot.project == project
+        return state, slot
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("route", ["workspace", "project"])
+    async def test_a_switch_on_an_empty_chat_keeps_the_greeting(
+        self, monkeypatch, tmp_path, route
+    ) -> None:
+        """The reading is kept for the project it was read in, so a switch that
+        moves the project must read again, or the page loses the greeting."""
+        project = self._project(tmp_path, "plain")
+        state, slot = await self._switch_project(monkeypatch, tmp_path, route, project)
+
+        assert slot.messages == [], "a switch on an unstarted chat writes no row"
+        assert state.serialize_slot(slot)["welcome_message"] == _HINT
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("route", ["workspace", "project"])
+    async def test_the_new_projects_own_spec_gives_the_greeting(
+        self, monkeypatch, tmp_path, route
+    ) -> None:
+        """A project's own spec of the agent shadows the user-level one, so after
+        the switch the page shows the greeting of the spec that will answer."""
+        project = self._project(tmp_path, "repo", "Project level greeting.")
+        state, slot = await self._switch_project(monkeypatch, tmp_path, route, project)
+
+        assert slot.messages == []
+        assert state.serialize_slot(slot)["welcome_message"] == "Project level greeting."
+
+    @pytest.mark.asyncio
+    async def test_the_first_turn_writes_the_greeting_once_and_the_page_lets_go(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """From the first row on the summary ships no greeting: the cold start's
+        tagged row carries it, exactly once."""
+        state = self._state(monkeypatch, tmp_path)
+        await self._post(
+            state,
+            "/api/chat/slots",
+            {"name": "welcome-turn-slot", "agent": "helper", "agent_kind": "template"},
+        )
+        slot = state._slots["welcome-turn-slot"]
+        assert state.serialize_slot(slot)["welcome_message"] == _HINT
+
+        import kiro_crew.dashboard.chat_runner as runner
+
+        # The runner harness above, on this state: a new session that answers "ok".
+        client = MagicMock()
+        client.context_usage_pct = MagicMock(return_value=50.0)
+        client.shutdown = AsyncMock()
+        state.sessions.get_or_create = AsyncMock(return_value=(client, True, False))
+        state.sessions.release = MagicMock()
+        state.sessions.set_approval_policy = MagicMock()
+        state.sessions.check_context_usage = MagicMock()
+        state.sessions.record_success = MagicMock()
+        state.sessions.record_failure = AsyncMock()
+        state.sessions.get_slack_link = MagicMock(return_value=(None, None))
+        state.broadcast_ws = MagicMock()
+        state.push_slots_update = MagicMock()
+        state.is_yolo_active = MagicMock(return_value=False)
+        state._background_tasks = set()
+        TestWelcomeMessageInARunnerTurn._text_stream(client)
+        try:
+            await runner._run_chat(state, slot, "hello")
+        finally:
+            await TestWelcomeMessageInARunnerTurn._drain(state)
+
+        rows = [m for m in slot.messages if m.get("content") == _HINT]
+        assert [(m["role"], m["meta"]["kind"]) for m in rows] == [("notice", "agent_welcome")]
+        assert state.serialize_slot(slot)["welcome_message"] == ""
+
+    def test_a_reading_for_another_binding_shows_nothing(self, tmp_path) -> None:
+        """A path that moves the agent or the project without a fresh read leaves
+        a stale reading, which must read as no greeting, never another agent's."""
+        from kiro_crew.dashboard.agent_welcome import welcome_preview
+
+        slot = _make_state(tmp_path).get_or_create_slot("welcome-stale")
+        slot.agent = "helper"
+        slot._welcome_preview = ("helper", "", slot.project or "", _HINT)
+        assert welcome_preview(slot) == _HINT
+        slot.agent = "other"
+        assert welcome_preview(slot) == ""
+        slot.agent = "helper"
+        slot.project = "/elsewhere"
+        assert welcome_preview(slot) == ""
+
+    @pytest.mark.asyncio
+    async def test_the_page_and_the_row_show_the_same_redacted_text(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Untrusted spec text: the page reading goes through the redactors the
+        row does, so a credential in the hint reaches neither."""
+        from kiro_crew.dashboard.agent_welcome import refresh_welcome_preview
+        from kiro_crew.dashboard.chat_runner import _surface_agent_welcome
+
+        secret = "AKIA" + "I" * 16
+        state, slot, _ = TestSurfaceAgentWelcome._slot(monkeypatch, tmp_path, f"use {secret} now")
+        state.push_slots_update = MagicMock()
+        await refresh_welcome_preview(state, slot)
+        page = state.serialize_slot(slot)["welcome_message"]
+        await _surface_agent_welcome(state, slot, "helper")
+        row = next(m for m in slot.messages if m.get("role") == "notice")
+
+        assert secret not in page
+        assert page == row["content"]
+        state.push_slots_update.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_a_chat_that_has_rows_reads_nothing(self, monkeypatch, tmp_path) -> None:
+        from kiro_crew.dashboard.agent_welcome import refresh_welcome_preview
+
+        state, slot, reads = TestSurfaceAgentWelcome._slot(monkeypatch, tmp_path, _HINT)
+        slot.append("user", "hello", "msg msg-u")
+        await refresh_welcome_preview(state, slot)
+
+        assert reads == []
+        assert state.serialize_slot(slot)["welcome_message"] == ""
+
+    def test_the_welcome_page_reads_the_summary_field(self) -> None:
+        """The field name crosses the wire: the transcript view hands the
+        summary's ``welcome_message`` to the welcome page."""
+        view = (_WEBSITE / "pages" / "chat" / "page" / "ChatTranscriptView.tsx").read_text(
+            encoding="utf-8"
+        )
+        assert "agentWelcome={currentSlot?.welcome_message}" in view

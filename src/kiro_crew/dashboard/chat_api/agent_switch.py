@@ -1473,6 +1473,11 @@ async def switch_slot_agent(
     # itself a strong first-message intent signal (it also resets the
     # project), so re-arm the speculative spawn for the new bindings.
     schedule_eager_spawn(state, slot, start_priority=person_priority(caller.owner))
+    # On a chat with no row the welcome page shows the new agent's greeting, and
+    # the pick writes none there (the boundary notice above is withheld).
+    from kiro_crew.dashboard.agent_welcome import refresh_welcome_preview
+
+    await refresh_welcome_preview(state, slot)
     state.push_slots_update()
     resp_body: dict = {
         "ok": True,

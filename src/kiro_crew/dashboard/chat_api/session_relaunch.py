@@ -601,6 +601,11 @@ async def api_chat_slot_workspace(request: web.Request) -> web.Response:
         # The transcript boundary for the reset, still inside both locks so
         # the same-value check above and this append cannot interleave.
         await _append_session_switch_notice(slot, "workspace", ws_name)
+    # The welcome page's greeting is read per project: a project's own agent
+    # spec can shadow the user-level one.
+    from kiro_crew.dashboard.agent_welcome import refresh_welcome_preview
+
+    await refresh_welcome_preview(state, slot)
     state.push_slots_update()
     ws_resp: dict = {"ok": True, "workspace": ws_name}
     if teardown_incomplete:
@@ -859,5 +864,9 @@ async def api_chat_slot_project(request: web.Request) -> web.Response:
                 },
                 status=500,
             )
+    # The welcome page's greeting is read per project, as on a workspace switch.
+    from kiro_crew.dashboard.agent_welcome import refresh_welcome_preview
+
+    await refresh_welcome_preview(state, slot)
     state.push_slots_update()
     return web.json_response({"ok": True, "project": project})
