@@ -1,0 +1,2 @@
+{"direction": "client", "message": {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": 1, "clientCapabilities": {}}}}
+{"direction": "adapter", "message": {"jsonrpc": "2.0", "id": 0, "result": {"protocolVersion": 1, "agentCapabilities": {"promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true}, "loadSession": true, "sessionCapabilities": {"list": {}, "close": {}, "resume": {}, "fork": {}}, "interactivePermissions": true}, "agentInfo": {"name": "@bex-co/muse-code-acp", "version": "0.11.0"}}}}
