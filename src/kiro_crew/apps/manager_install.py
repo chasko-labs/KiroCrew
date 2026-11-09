@@ -569,6 +569,17 @@ def update_app(
     if not existing:
         return AppResult(ok=False, name=name, error=f"app {name!r} is not installed")
 
+    # A marketplace record's ``market:<ref>@<n>`` source and zip sha256 are its
+    # provenance and its trust coordinate. The record write below would replace
+    # them with the folder path, silently dropping the listing provenance and the
+    # grant's binding coordinate. Keep the update working but carry the existing
+    # ``source`` and ``sourceCommit`` forward so both stay untouched, and warn.
+    from kiro_crew.apps.market_source import MARKET_LOCAL_COPY_HINT, is_market_source
+
+    preserve_market_source = is_market_source(existing.source)
+    if preserve_market_source:
+        logger.warning("%s: %s", name, MARKET_LOCAL_COPY_HINT)
+
     source_repository = _effective_source_repository(source_repository)
     trust_denied = repository_bound_grant_denied(name, repository=source_repository)
     if trust_denied:
@@ -636,13 +647,15 @@ def update_app(
             requested_session_approval=requested_session_approval,
             widened_session_approval=widened_session_approval,
         ),
-        source=str(source),
+        # A marketplace record keeps its ``market:`` source and zip sha256 so the
+        # listing provenance and the grant's trust coordinate survive the update.
+        source=existing.source if preserve_market_source else str(source),
         # A registry update makes the record a registry one; a built-in changes
         # provenance only through adoption, below.
         origin="registry" if source_repository and not builtin_owned else existing.origin,
         sourceUrl=source_repository.strip(),
         sourceRegistry="",
-        sourceCommit="",
+        sourceCommit=existing.sourceCommit if preserve_market_source else "",
         sourceSigner="",
         approvedGrantsStored=True,
     )

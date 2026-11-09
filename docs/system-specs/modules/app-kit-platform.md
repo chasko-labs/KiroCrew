@@ -6459,6 +6459,14 @@ at enable. The staging folder is deleted whatever the outcome. The listing
 server is reached only through `MarketClient`, and a signed URL that is not
 `https://` is refused before any fetch.
 
+A folder `update_app`, and a `register_external_app` self-registration, over a
+record whose source is `market:` keeps working, but the record write carries the
+existing `market:` source and zip SHA-256 forward instead of swapping them for
+the folder path and an empty commit. The new version and manifest land, while
+the app's listing provenance and the grant's trust coordinate stay untouched,
+and one warning (the `MARKET_LOCAL_COPY_HINT`) tells the person a local copy is
+the way to take the app off marketplace updates on purpose.
+
 `resolve_installed_trust_repository` maps a `market:<ref>@<n>` source to the
 coordinate `market:<ref>` (`apps/market_source.py`), so the trust dialog binds
 the grant to that listing in `agent.apps_trusted_repositories`. A grant kept in

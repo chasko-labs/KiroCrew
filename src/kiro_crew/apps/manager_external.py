@@ -234,6 +234,17 @@ def register_external_app(
             ),
         )
 
+    # A marketplace record's ``market:`` source and zip sha256 are its
+    # provenance and trust coordinate. The update branch below would replace
+    # them, silently dropping the listing provenance and the grant's binding
+    # coordinate. Keep self-registration working but carry the existing
+    # ``source`` and ``sourceCommit`` forward so both stay untouched, and warn.
+    from kiro_crew.apps.market_source import MARKET_LOCAL_COPY_HINT, is_market_source
+
+    preserve_market_source = existing is not None and is_market_source(existing.source)
+    if preserve_market_source:
+        logger.warning("%s: %s", name, MARKET_LOCAL_COPY_HINT)
+
     # Self-registration admits a new manifest the way install and update do, so it
     # applies the same cron-grant rule. A re-registration at the version already on
     # record, whose recorded manifest already scheduled crons without the grant, is
@@ -328,11 +339,15 @@ def register_external_app(
             approvedGrantsStored=existing.approvedGrantsStored or bool(manifest_data),
         )
         if not preserve_server_provenance:
-            if source:
+            # A marketplace record keeps its ``market:`` source and zip sha256 so
+            # the listing provenance and the grant's trust coordinate survive the
+            # self-registration; everything else is replaced as usual.
+            if source and not preserve_market_source:
                 meta.source = source
             meta.sourceUrl = requested_repository
             meta.sourceRegistry = ""
-            meta.sourceCommit = ""
+            if not preserve_market_source:
+                meta.sourceCommit = ""
             meta.sourceSigner = ""
             meta.origin = origin
 
