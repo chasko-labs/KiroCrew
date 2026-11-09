@@ -25,6 +25,7 @@ from kiro_crew.platform.interfaces import CloudInstancePolicy
 _ACCT = "123456789012"
 _BOUNDARY = f"arn:aws:iam::{_ACCT}:policy/kirocrew-ec2-boundary"
 _HOST_ARN = "arn:aws:iam::{account}:policy/HostAgent/HostMonitoring"
+_HOST_IN_ACCT = f"arn:aws:iam::{_ACCT}:policy/HostAgent/HostMonitoring"
 _STATEMENTS = (
     {
         "Sid": "HostAgentLogsWrite",
@@ -132,7 +133,7 @@ class TestEditionPolicy:
     def test_the_addendum_attaches_only_on_the_boundary_gated_role_path(self, host_agent):
         doc = iam.host_policy_document()
         assert doc is not None
-        (stmt,) = doc["Statement"]
+        stmt = next(s for s in doc["Statement"] if s["Sid"] == "IamAttachHostPoliciesForInstance")
         assert stmt["Action"] == ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
         # Never LEGACY_ROLE_ARN: a root-path role may predate the boundary, and an
         # attached policy there would be uncapped.
@@ -142,6 +143,21 @@ class TestEditionPolicy:
         assert stmt["Condition"] == {
             "ArnEquals": {"iam:PolicyARN": ["arn:aws:iam::*:policy/HostAgent/HostMonitoring"]},
             "StringEquals": {"aws:ResourceTag/kirocrew:managed": "true"},
+        }
+
+    def test_the_addendum_lets_the_launcher_read_exactly_those_policies(self, host_agent):
+        """The pre-deploy existence check needs iam:GetPolicy on them, and nothing more."""
+        doc = iam.host_policy_document()
+        assert doc is not None
+        assert [s["Sid"] for s in doc["Statement"]] == [
+            "IamAttachHostPoliciesForInstance",
+            "IamReadHostPolicies",
+        ]
+        assert doc["Statement"][1] == {
+            "Sid": "IamReadHostPolicies",
+            "Effect": "Allow",
+            "Action": "iam:GetPolicy",
+            "Resource": ["arn:aws:iam::*:policy/HostAgent/HostMonitoring"],
         }
 
     def test_argv_names_the_policy_in_the_launch_account(self, host_agent):
@@ -234,9 +250,9 @@ class TestDeploy:
         )
         monkeypatch.setattr(aws, "run_aws", lambda *a, **k: deploy_result)
 
-    def _deploy(self):
+    def _deploy(self, **kwargs):
         return ec2.deploy(
-            tag="t1", tier=sizes.get_tier("balanced"), profile="dev", region="us-east-1"
+            tag="t1", tier=sizes.get_tier("balanced"), profile="dev", region="us-east-1", **kwargs
         )
 
     def test_a_denied_host_policy_attach_names_the_second_policy(self, host_agent, monkeypatch):
@@ -249,6 +265,89 @@ class TestDeploy:
         with pytest.raises(aws.AWSError) as exc:
             self._deploy()
         assert "--host-policies" not in str(exc.value)
+
+    def test_a_host_policy_the_account_lacks_refuses_before_anything_is_uploaded(
+        self, host_agent, monkeypatch
+    ):
+        """CloudFormation would fail the role's attach with IAM's raw 404 and roll back."""
+        self._stub(monkeypatch, (0, "", ""))
+        uploads: list[tuple] = []
+        monkeypatch.setattr(
+            source, "upload_source", lambda *a, **k: uploads.append(a) or ("bucket-1", "t1/s.tgz")
+        )
+
+        def _no_network(*_a, **_k):
+            raise AssertionError("network discovery ran before the refusal")
+
+        monkeypatch.setattr(ec2, "discover_network", _no_network)
+        fake = _FakeAccount(
+            (
+                254,
+                "",
+                "An error occurred (NoSuchEntity) when calling the GetPolicy operation: "
+                f"Policy {_HOST_IN_ACCT} was not found.",
+            )
+        )
+        monkeypatch.setattr(aws, "run_aws", fake)
+        with pytest.raises(aws.AWSError) as exc:
+            self._deploy(ship_source=True)
+        assert _HOST_IN_ACCT in str(exc.value)
+        assert exc.value.action == "iam:GetPolicy"
+        assert fake.calls == [["iam", "get-policy", "--policy-arn", _HOST_IN_ACCT]]
+        assert uploads == []
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            (0, json.dumps({"Policy": {"Arn": _HOST_IN_ACCT}}), ""),
+            (
+                254,
+                "",
+                "An error occurred (AccessDenied) when calling the GetPolicy operation: "
+                "User: arn:aws:iam::123456789012:user/l is not authorized to perform: "
+                f"iam:GetPolicy on resource: policy {_HOST_IN_ACCT}",
+            ),
+        ],
+        ids=["held", "read-denied"],
+    )
+    def test_the_attach_is_kept_unless_the_account_is_known_to_lack_it(
+        self, host_agent, monkeypatch, answer
+    ):
+        """A read that fails another way proves nothing; the attach still needs the policy."""
+        self._stub(monkeypatch, (0, "", ""))
+        monkeypatch.setattr(ec2, "describe", lambda *a, **k: {})
+        fake = _FakeAccount(answer)
+        monkeypatch.setattr(aws, "run_aws", fake)
+        result = self._deploy(ship_source=True)
+        assert fake.ops() == ["iam get-policy", "cloudformation deploy"]
+        assert f"ExtraManagedPolicyArns={_HOST_IN_ACCT}" in result.argv
+
+    def test_without_host_policies_no_policy_is_read(self, monkeypatch):
+        self._stub(monkeypatch, (0, "", ""))
+        monkeypatch.setattr(ec2, "describe", lambda *a, **k: {})
+        fake = _FakeAccount((0, "", ""))
+        monkeypatch.setattr(aws, "run_aws", fake)
+        self._deploy(ship_source=True)
+        assert fake.ops() == ["cloudformation deploy"]
+
+
+class _FakeAccount:
+    """``aws`` for one account: answers the host-policy read and the deploy, records calls."""
+
+    def __init__(self, get_policy: tuple[int, str, str]) -> None:
+        self.get_policy = get_policy
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, *_a, **_k):
+        self.calls.append(list(args))
+        if args[:2] == ["iam", "get-policy"]:
+            return self.get_policy
+        if args[:2] == ["cloudformation", "deploy"]:
+            return 0, "", ""
+        raise AssertionError(f"unexpected call {args}")
+
+    def ops(self) -> list[str]:
+        return [" ".join(c[:2]) for c in self.calls]
 
 
 class TestTemplate:

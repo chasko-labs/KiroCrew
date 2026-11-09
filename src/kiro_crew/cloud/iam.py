@@ -366,8 +366,10 @@ def host_policy_document() -> dict[str, Any] | None:
 
     A SECOND customer-managed policy, applied beside :func:`policy_document`, that
     lets the launcher attach (and on teardown detach) exactly the edition's
-    ``cloud_instance_policy`` ARNs. ``None`` when the edition adds none, so a
-    build without them needs one policy, as before.
+    ``cloud_instance_policy`` ARNs, and read them so a launch can check that the
+    account holds each one first (``host_policy.require_managed_policies``).
+    ``None`` when the edition adds none, so a build without them needs one
+    policy, as before.
 
     Separate for two reasons. The main policy is within a few dozen characters of
     IAM's 6,144-character cap, so it has no room for another statement. And the
@@ -401,7 +403,15 @@ def host_policy_document() -> dict[str, Any] | None:
                     "ArnEquals": {"iam:PolicyARN": arns},
                     "StringEquals": {f"aws:ResourceTag/{MANAGED_TAG_KEY}": "true"},
                 },
-            }
+            },
+            {
+                # The pre-deploy existence check: a read of these policies' metadata
+                # and nothing else.
+                "Sid": "IamReadHostPolicies",
+                "Effect": "Allow",
+                "Action": "iam:GetPolicy",
+                "Resource": arns,
+            },
         ],
     }
 
