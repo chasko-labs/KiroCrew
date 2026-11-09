@@ -114,23 +114,23 @@ class _ResettingSessions(_FakeSessions):
 
 @pytest.mark.asyncio
 async def test_the_background_owner_is_pinned_before_the_call_not_after_it(monkeypatch):
-    """The spend must stay with the session that ordered the work.
+    """The spend stays charged to the session that ordered the work.
 
-    ``run_bg_oneliner`` writes its ledger entry in the teardown, and the resolver
-    answers which unit a slot's work is landing in NOW -- so resolving there would
-    file this call's cost against a successor session that never incurred it,
-    silently, in an append-only file. The registry double flips its answer between
-    the two moments, so only a pre-call resolution can pass.
+    The owner is resolved before the call. The registry double flips its answer
+    between the two moments, as a slot reset does, so the entry goes to the newest
+    unit and names the pre-call owner in ``for_session``: an older unit never grows.
     """
     from kiro_crew.crew_log import emit
 
     monkeypatch.setenv(emit.CREW_LOG_ENV, "1")
-    recorded: list[str] = []
+    recorded: list[tuple[str, str]] = []
     monkeypatch.setattr(
         emit,
         "on_background_completed",
-        lambda session_id, **_kw: recorded.append(session_id),
+        lambda session_id, **kw: recorded.append((session_id, kw.get("for_session", ""))),
     )
+    # The successor has no crew log in this double; run the held write at once.
+    monkeypatch.setattr(emit, "write_when_opened", lambda session_id, write: write())
     session = _FakeSession(
         [
             SimpleNamespace(kind=EVENT_TEXT_CHUNK, text="hi"),
@@ -145,7 +145,9 @@ async def test_the_background_owner_is_pinned_before_the_call_not_after_it(monke
         crew_log_kind="title",
         crew_log_session_key="dashboard:chat-7",
     )
-    assert recorded == ["owner-sid"], "the entry must name the unit that ordered the work"
+    assert recorded == [
+        ("successor-sid", "owner-sid")
+    ], "the entry goes to the newest unit, charged to the unit that ordered the work"
 
 
 @pytest.mark.asyncio

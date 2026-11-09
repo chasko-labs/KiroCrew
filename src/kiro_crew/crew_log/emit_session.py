@@ -8,6 +8,7 @@ did not come back.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -54,6 +55,78 @@ if TYPE_CHECKING:  # pragma: no cover -- typing only; the runtime imports stay g
 
 #: Used when a call site has no agent name, matching the repo's own default.
 _DEFAULT_AGENT = "kirocrew"
+
+#: Writes held for a unit whose crew log does not exist yet, flushed in order by the
+#: create in :func:`on_session_opened`. Bounded per unit and in units held.
+_AWAITING_OPEN: "OrderedDict[str, list[Callable[[], None]]]" = OrderedDict()
+_AWAITING_OPEN_PER_UNIT = 32
+_AWAITING_OPEN_UNITS = 64
+#: Held writes discarded by a bound (a mutable cell: a facade owner never rebinds a
+#: global), and the units already warned about.
+_awaiting_open_counts: "dict[str, int]" = {"dropped": 0}
+_awaiting_open_warned: "set[str]" = set()
+
+
+def write_when_opened(session_id: str, write: "Callable[[], None]") -> None:
+    """Run *write* now if *session_id* has a crew log, else hold it until one is created.
+
+    For an entry about a unit that is newer than the one its writer started under: a
+    reset can make a session the slot's newest before its first turn creates its crew
+    log, and creating it here would write a header with fields only that turn knows.
+    The older unit is never written instead, because an older unit never grows.
+
+    Past :data:`_AWAITING_OPEN_PER_UNIT` held writes for one unit, or when a new unit
+    pushes out the oldest of :data:`_AWAITING_OPEN_UNITS`, the write is discarded,
+    counted in :func:`awaiting_open_dropped`, and the unit warned about once.
+    """
+    if not session_id or not enabled():
+        return
+    dropped: "list[tuple[str, int]]" = []
+    with _lock:
+        # Under the lock the create's flush takes, so a write cannot be held after the
+        # flush for its unit has already run.
+        run_now = session_id not in _AWAITING_OPEN and _crew_log().CrewLog.exists(_KIND, session_id)
+        if not run_now:
+            held = _AWAITING_OPEN.setdefault(session_id, [])
+            if len(_AWAITING_OPEN) > _AWAITING_OPEN_UNITS:
+                old_sid, old = _AWAITING_OPEN.popitem(last=False)
+                _awaiting_open_counts["dropped"] += len(old)
+                dropped.append((old_sid, len(old)))
+            if len(held) < _AWAITING_OPEN_PER_UNIT:
+                held.append(write)
+            else:
+                _awaiting_open_counts["dropped"] += 1
+                dropped.append((session_id, 1))
+    for sid, count in dropped:
+        _warn_awaiting_open_drop(sid, count)
+    if run_now:
+        write()
+
+
+def _warn_awaiting_open_drop(session_id: str, count: int) -> None:
+    with _lock:
+        first = session_id not in _awaiting_open_warned
+        _awaiting_open_warned.add(session_id)
+    if first:
+        logger.warning(
+            "crew log %s: %d write(s) held for its first open were discarded at the "
+            "hold bound; the unit's crew log was not created in time",
+            session_id,
+            count,
+        )
+
+
+def awaiting_open_dropped() -> int:
+    """Writes discarded because their unit's crew log was not created in time."""
+    return _awaiting_open_counts["dropped"]
+
+
+def _flush_awaiting_open(session_id: str) -> None:
+    """Run every write held for *session_id*, in order, now that its crew log exists."""
+    with _lock:
+        held = _AWAITING_OPEN.pop(session_id, [])
+    for write in held:
+        write()
 
 
 def _seed_attempts(session_id: str, log: CrewLog) -> None:
@@ -845,6 +918,8 @@ def on_session_opened(
             # ``session/opened`` is retained and this job runs again, and queueing
             # above would queue one repair per attempt.
             _queue_tail_repair(repair_target, slot)
+        if created:
+            _flush_awaiting_open(session_id)
 
     def _flag_creation_failed() -> None:
         # The creating record died with no crew log file behind it: no later append

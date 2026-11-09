@@ -147,7 +147,8 @@ async def run_bg_oneliner(
     """
     # Pinned before the acquisition, which is itself a suspension point: a slot
     # reset, switch or compaction meanwhile gives the successor a new ACP session
-    # id, and a later lookup would charge this spend to it.
+    # id, and the pin is what names the session this spend is charged to
+    # (``for_session`` when the entry lands in the successor's unit).
     _crew_log_owner = _background_crew_log_owner(sessions, crew_log_session_key, crew_log_kind)
     if memory_gate and start_priority is StartPriority.BACKGROUND:
         await _refuse_while_memory_critical(sel_source)
@@ -317,6 +318,8 @@ async def run_bg_oneliner(
                         model=_served,
                         provider=_provider_label(session),
                         elapsed_ms=_elapsed_ms,
+                        sessions=sessions,
+                        crew_log_session_key=crew_log_session_key,
                     )
                     await persist_token_record_async(
                         sel_session_key,
@@ -386,11 +389,20 @@ def _record_background_crew_log(
     model: str,
     provider: str,
     elapsed_ms: int,
+    sessions: Any = None,
+    crew_log_session_key: str = "",
 ) -> None:
     """File one background model call in the crew log of the session it served.
 
     ``owner_sid`` is the unit :func:`_background_crew_log_owner` pinned before the
-    call, never one resolved here. Empty means "do not write".
+    call: the session the spend is charged to. Empty means "do not write".
+
+    The entry lands in the slot's NEWEST unit. A crew log is append-only, and a
+    write into a unit the slot has moved past (a reset, switch or compaction during
+    the call) grows an older unit, which retires the slot's savepoints beside the
+    newest one. So when *crew_log_session_key* now resolves to another unit, the
+    entry goes there and carries ``for_session=owner_sid``, naming the session that
+    incurred it. An unresolvable key keeps the pinned unit.
 
     Both background entry points call this after the same ``usage_has_billing``
     gate the usage store uses, so they agree on WHETHER a call is billable. Either
@@ -404,18 +416,35 @@ def _record_background_crew_log(
     try:
         from kiro_crew.crew_log import emit as crew_log_emit
 
-        crew_log_emit.on_background_completed(
-            owner_sid,
-            kind=crew_log_kind,
-            model=model,
-            provider=provider,
-            credits=float(getattr(usage, "credits", 0.0) or 0.0),
-            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
-            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
-            cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
-            cache_write_tokens=int(getattr(usage, "cache_creation_tokens", 0) or 0),
-            duration_ms=int(elapsed_ms),
-        )
+        target, for_session = owner_sid, ""
+        if sessions is not None and crew_log_session_key:
+            from kiro_crew.crew_log.resolve import unit_for_session_key
+
+            current = unit_for_session_key(sessions, crew_log_session_key)
+            if current and current != owner_sid:
+                target, for_session = current, owner_sid
+
+        def _write() -> None:
+            crew_log_emit.on_background_completed(
+                target,
+                kind=crew_log_kind,
+                for_session=for_session,
+                model=model,
+                provider=provider,
+                credits=float(getattr(usage, "credits", 0.0) or 0.0),
+                input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+                cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
+                cache_write_tokens=int(getattr(usage, "cache_creation_tokens", 0) or 0),
+                duration_ms=int(elapsed_ms),
+            )
+
+        if for_session:
+            # The newest unit may not have a crew log yet (its first turn creates it):
+            # held until then, never written into the older unit.
+            crew_log_emit.write_when_opened(target, _write)
+        else:
+            _write()
     except Exception:
         logger.debug(
             "crew log: recording a background call failed kind=%s",
@@ -719,6 +748,8 @@ async def background_turn(
                         model=str(getattr(client, "served_model", "") or "").strip(),
                         provider=_provider_label(client),
                         elapsed_ms=turn_elapsed_ms,
+                        sessions=sessions,
+                        crew_log_session_key=crew_log_session_key,
                     )
                     await persist_token_record_async(
                         key,

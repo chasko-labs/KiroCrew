@@ -1099,6 +1099,7 @@ def on_background_completed(
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
     duration_ms: int = 0,
+    for_session: str = "",
 ) -> None:
     """Record a model call the gateway made ON this session's behalf.
 
@@ -1115,8 +1116,14 @@ def on_background_completed(
     in and leaves the rest at 0, so a zero is "this provider does not bill here",
     not a measurement. ``duration_ms`` is the wall clock the background helper
     measured around the call itself, and it is likewise omitted at 0.
+
+    ``for_session`` names the session the call was made for when that is not
+    *session_id*: the slot moved to a new unit during the call, and the entry is
+    written to the newest unit because an older one never grows.
     """
     data: dict[str, Any] = {"kind": kind}
+    if for_session:
+        data["for_session"] = for_session
     if model:
         data["model"] = model
     if provider:

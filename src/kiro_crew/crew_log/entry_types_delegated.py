@@ -252,6 +252,17 @@ TYPES: tuple[EntryType, ...] = (
                 ),
             ),
             Field("ms", JSON_INT, note="Wall clock measured around the call itself."),
+            Field(
+                "for_session",
+                JSON_STRING,
+                note=(
+                    "The session the call was made for, present only when that is not "
+                    "this unit's: the slot moved to a new unit during the call, and the "
+                    "entry went to the newest unit because an older unit never grows. "
+                    "Spend totals count it once, here; a per-session split reads this "
+                    "field for the session that incurred it."
+                ),
+            ),
         ),
         note=(
             "No turn. The call is not part of one -- it runs after a turn ends, on a "

@@ -173,16 +173,25 @@ from kiro_crew.crew_log.emit_runtime import (  # noqa: F401
     set_child_liveness,
 )
 from kiro_crew.crew_log.emit_session import (  # noqa: F401
+    _AWAITING_OPEN,
+    _AWAITING_OPEN_PER_UNIT,
+    _AWAITING_OPEN_UNITS,
     _DEFAULT_AGENT,
+    _awaiting_open_counts,
+    _awaiting_open_warned,
+    _flush_awaiting_open,
     _latch_class,
     _note_class_change,
     _seed_attempts,
+    _warn_awaiting_open_drop,
+    awaiting_open_dropped,
     on_class_observed,
     on_open_tab_unrestored,
     on_session_adopted,
     on_session_opened,
     on_session_released,
     on_session_spawned,
+    write_when_opened,
 )
 from kiro_crew.crew_log.emit_state import (  # noqa: F401
     _KIND,
