@@ -206,8 +206,32 @@ def _is_enabled(request: web.Request) -> bool:
 
 
 def _terminal_enabled(cfg: dict) -> bool:
-    """Whether a ``dashboard.terminal`` object leaves the panel on (the default)."""
+    """Whether a ``dashboard.terminal`` object leaves the panel on (the default).
+
+    A security policy whose ``boot.allow_terminal`` is stated and not a JSON
+    ``true`` turns it off whatever the config says (#30367).
+    """
+    if _policy_refuses_terminal():
+        return False
     return bool(cfg.get("enabled", True))
+
+
+def _policy_refuses_terminal() -> bool:
+    """Whether the active security policy refuses the dashboard terminal.
+
+    A policy that leaves ``allow_terminal`` out has no opinion (``None``). A
+    lookup that fails reads as a refusal: this gate fails closed.
+    """
+    # Deferred import: this package never imports the platform package at module load.
+    from kiro_crew.platform.context import current_context, safe_context_call
+
+    def _read() -> bool:
+        boot = getattr(current_context().governance, "boot", None)
+        return boot is not None and boot.allow_terminal is False
+
+    return safe_context_call(
+        _read, fallback=True, log_message="security policy read failed; terminal refused"
+    )
 
 
 _enabled_cache: list = [True, 0.0]  # [value, timestamp]
