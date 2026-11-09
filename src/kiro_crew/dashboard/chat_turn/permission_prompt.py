@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from kiro_crew.dashboard.chat_utils import _tool_identity_fields, slack_mirror_is_paused
 from kiro_crew.dashboard.deny_override import override_decision
@@ -79,6 +79,82 @@ if TYPE_CHECKING:
     from kiro_crew.dashboard.chat_turn.turn_ledgers import _wt_note_approved
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn, _Flow
     from kiro_crew.dashboard.chat_turn.turn_spec_hooks import _fire
+
+
+def _schedule_bridge_pending_approval(
+    state: Any,
+    slot: Any,
+    session_key: str,
+    event: Any,
+    fut: "asyncio.Future[str]",
+    slack_card_ts: str | None,
+) -> None:
+    """Start the bridge hand-off as its own tracked task; the prompt never awaits it.
+
+    The prompt registered its approval and must reach the ``try`` that unregisters
+    it without a new await in between, or a cancel landing there would strand the
+    approval. So the config read and the publish run beside the prompt, never in it.
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(
+            _bridge_pending_approval(state, slot, session_key, event, fut, slack_card_ts)
+        )
+    except RuntimeError:
+        return  # No running loop: nothing can bridge.
+    # Held until done: the loop keeps only a weak reference to a task. The gateway's
+    # own set when it has one, else this module's.
+    tasks = getattr(state, "_background_tasks", None)
+    if not isinstance(tasks, set):
+        tasks = _BRIDGE_HANDOFF_TASKS
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+    task.add_done_callback(_log_bridge_handoff_failure)
+
+
+#: Hand-off tasks kept alive when the state holds no background-task set.
+_BRIDGE_HANDOFF_TASKS: "set[asyncio.Task[None]]" = set()
+
+
+def _log_bridge_handoff_failure(task: "asyncio.Task[None]") -> None:
+    """Log a hand-off that raised, so a failure is never silent."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        import logging
+
+        logging.getLogger(__name__).warning("pending-approval bridge hand-off failed", exc_info=exc)
+
+
+async def _bridge_pending_approval(
+    state: Any,
+    slot: Any,
+    session_key: str,
+    event: Any,
+    fut: "asyncio.Future[str]",
+    slack_card_ts: str | None,
+) -> None:
+    """Hand the open approval to the notification bridge, behind its preview. Never raises."""
+    # Lazy: the note module loads the bus, and the config load is off the loop.
+    from kiro_crew.config import KiroCrewConfig
+    from kiro_crew.notifications.bridge_approval_note import publish_pending_approval
+
+    try:
+        cfg = await asyncio.to_thread(KiroCrewConfig.load)
+    except Exception:
+        return  # No config, no preview: nothing is bridged.
+    if fut.done():
+        return  # Answered while the config was read: there is nothing pending to send.
+    publish_pending_approval(
+        state,
+        cfg,
+        slot_key=slot.key,
+        session_key=session_key,
+        request_id=str(event.request_id),
+        tool_title=event.tool_name or "",
+        session_title=slot.display_title,
+        slack_card=slack_card_ts is not None,
+    )
 
 
 async def _on_permission_prompt(
@@ -447,6 +523,8 @@ async def _on_permission_prompt(
                 fut.set_result("rejected")
                 _host_deny_cause = DENY_CAUSE_APPROVAL_UNDELIVERABLE
                 _host_deny_reason = "the approval prompt could not be delivered to Slack"
+    if not fut.done():
+        _schedule_bridge_pending_approval(state, slot, session_key, event, fut, _slack_approval_ts)
     # Pre-seeded so the `finally` backstop below is total over EVERY
     # exit from the await — including CancelledError, which slot
     # deletion / cleanup endpoints raise by cancelling slot.task.
