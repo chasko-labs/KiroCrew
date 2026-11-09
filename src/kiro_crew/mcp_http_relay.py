@@ -20,13 +20,19 @@ import logging
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+class _RelayServer(HTTPServer):
+    """An HTTP server bound to the stdio child it relays for."""
+
+    child: subprocess.Popen[str] | None = None
+
+
 class _Handler(BaseHTTPRequestHandler):
-    child: subprocess.Popen = None  # set per server instance
+    server: _RelayServer
 
     def log_message(self, *args: Any) -> None:
         pass
@@ -43,27 +49,44 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
             return
+        child = self.server.child
+        child_in = child.stdin if child is not None else None
+        child_out = child.stdout if child is not None else None
         if msg is None or "id" not in msg:
             try:
-                self.server.child.stdin.write(json.dumps(msg) + "\n")
-                self.server.child.stdin.flush()
+                if child_in is None:
+                    raise BrokenPipeError
+                child_in.write(json.dumps(msg) + "\n")
+                child_in.flush()
             except BrokenPipeError:
                 pass
             self.send_response(202)
             self.end_headers()
             return
         try:
-            self.server.child.stdin.write(json.dumps(msg) + "\n")
-            self.server.child.stdin.flush()
-            line = self.server.child.stdout.readline()
+            if child_in is None or child_out is None:
+                raise BrokenPipeError
+            child_in.write(json.dumps(msg) + "\n")
+            child_in.flush()
+            line = child_out.readline()
             if line:
                 body = line.encode()
             else:
-                body = json.dumps({"jsonrpc": "2.0", "id": msg.get("id"),
-                                   "error": {"code": -32603, "message": "relay: child closed"}}).encode()
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg.get("id"),
+                        "error": {"code": -32603, "message": "relay: child closed"},
+                    }
+                ).encode()
         except BrokenPipeError:
-            body = json.dumps({"jsonrpc": "2.0", "id": msg.get("id"),
-                               "error": {"code": -32603, "message": "relay: broken pipe"}}).encode()
+            body = json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": msg.get("id"),
+                    "error": {"code": -32603, "message": "relay: broken pipe"},
+                }
+            ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -76,13 +99,20 @@ class Relay:
 
     def __init__(self, command: list[str], env: dict[str, str] | None = None) -> None:
         import os
+
         child_env = dict(os.environ)
         if env:
             child_env.update(env)
         self.child = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1, env=child_env)
-        server = HTTPServer(("127.0.0.1", 0), _Handler)
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            env=child_env,
+        )
+        server = _RelayServer(("127.0.0.1", 0), _Handler)
         server.child = self.child
         self.port = server.server_address[1]
         self._server = server

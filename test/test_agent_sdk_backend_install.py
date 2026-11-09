@@ -68,6 +68,8 @@ def _stub_resolvers(
     codex=(None, "/usr/bin"),
     pi_acp=(["node", "/n/pi-acp.js"], "/usr/bin"),
     pi_cli=("/usr/local/bin/pi", "/usr/bin"),
+    muse_acp=(["node", "/n/muse-code-acp.js"], "/usr/bin"),
+    muse_cli=("/usr/local/bin/muse", "/usr/bin"),
     codex_acp=(["node", "/n/codex-acp.js"], "/usr/bin"),
     self_served=None,
 ):
@@ -88,6 +90,13 @@ def _stub_resolvers(
     # ``missing`` in CI.
     monkeypatch.setattr(client, "_resolve_pi_acp_bin", lambda: pi_acp)
     monkeypatch.setattr(client, "_resolve_pi_bin", lambda: pi_cli)
+    # muse's two halves: resolved from the harness module Crew actually imports
+    # them from (``agent_sdk.drivers.acp`` imports them function-locally from
+    # ``acp.harness.muse``), for the same machine-independence reason as above.
+    from kiro_crew.acp.harness import muse as muse_mod
+
+    monkeypatch.setattr(muse_mod, "_resolve_muse_acp_bin", lambda: muse_acp)
+    monkeypatch.setattr(muse_mod, "_resolve_muse_bin", lambda: muse_cli)
     # codex, stubbed for the same reason as the three above and missed when they were
     # added: the payload assertion below pins its row as ``missing``, so on a host that
     # HAS the codex adapter installed the real resolver answers ``installed`` and the
@@ -1021,6 +1030,7 @@ class TestEndpointPayloadShape:
             "goose",
             "kas",
             "kiro",
+            "muse",
             "opencode",
             "pi",
             "strands",
@@ -1136,6 +1146,12 @@ class TestEndpointPayloadShape:
         assert by_policy["pi"]["installed"] == "installed"
         assert by_policy["pi"]["missing_components"] == []
         assert by_policy["pi"]["install_command"] == ""
+        # muse's row is the same two-component shape with both resolvers stubbed
+        # present. The remedies differ per half (npm vs Meta's installer), but a
+        # present pair carries neither a component nor a command, like pi.
+        assert by_policy["muse"]["installed"] == "installed"
+        assert by_policy["muse"]["missing_components"] == []
+        assert by_policy["muse"]["install_command"] == ""
 
     def test_an_unknown_row_names_no_components(self, monkeypatch):
         """The three-state rule, enforced at the payload boundary too.

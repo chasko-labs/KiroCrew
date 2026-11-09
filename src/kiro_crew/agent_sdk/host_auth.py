@@ -71,6 +71,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -691,6 +692,39 @@ AGENT_AUTH_DECLARATIONS: Tuple[AgentAuthDeclaration, ...] = (
         # in. The phrase is pi-acp's own, not the SDK's generic prefix, so no other
         # harness's auth answer matches it.
         signed_out_signature="Configure an API key or log in with an OAuth provider",
+    ),
+    AgentAuthDeclaration(
+        backend=ACP_BACKEND_MUSE,
+        # Verified on disk: ``~/.muse/auth.json`` exists on a signed-in host
+        # alongside approval-policy.json, settings.json and trust.json. The
+        # file's exact key layout is not read here -- only its path is fenced.
+        credential_leaves=(".muse/auth.json",),
+        # No home-relocation variable is documented for Muse, so none is
+        # declared: a wrong override would fence a file the harness never reads.
+        home_override_env_vars=(),
+        # The one leaf the mask must spare: this harness is enforced, so the mask
+        # denies its child the whole credential floor, and muse authenticates
+        # ITSELF from this file. The read gate still refuses the same leaf to the
+        # agent's file tools.
+        adapter_own_leaves=(".muse/auth.json",),
+        # Action only, no state: the harness signs in on its own.
+        sign_in_remedy=(
+            "Muse signs in on its own \u2014 run muse in a terminal and complete "
+            "`muse login`, or set META_API_KEY for headless use. Neither is checked "
+            "here: the harness reads them."
+        ),
+        signed_out_message=(
+            "Muse is not signed in. Run `muse` in your terminal and complete "
+            "`muse login`, or export META_API_KEY, then start a new chat."
+        ),
+        # Excluded deliberately: it signs in through its own credential file (or a
+        # caller-held API key), so a ``kiro-cli logout`` says nothing about whether
+        # a running muse session is still authenticated.
+        host_logout_retires_children=False,
+        entitlement_source=ENTITLEMENT_OWN_CREDENTIAL_FILE,
+        # OPEN: no signed-out drive has been captured on this adapter, so there is
+        # no wire signature yet. An unsigned-out session fails at the adapter with
+        # its own text rather than matching a signature here.
     ),
     AgentAuthDeclaration(
         backend=ACP_BACKEND_DEEPSEEK,

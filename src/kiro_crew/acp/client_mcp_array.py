@@ -10,7 +10,8 @@ and a patch of the method on the class or on an instance reaches every caller.
 
 Instance fields written: ``_capability_projection_gaps``, ``_copilot_mcp_config_path``,
 ``_crew_bridge_snapshots``, ``_loaded_capability_template``, ``_mcp_mount_opened_at``, ``_mcp_mount_servers``,
-``_mcp_pruned``, ``_mcp_pruned_names``,
+``_mcp_pruned``, ``_mcp_pruned_names``, ``_muse_relays``,
+
 ``_mcp_pruned_omitted``, ``_mcp_report_frame_floor``, ``_member_dispatch_mounted``,
 ``_member_stub_allowlist``, ``_pending_oauth_requests``, ``_pi_mcp_handoff``,
 ``_session_agent_spec``,
@@ -1269,6 +1270,111 @@ async def _discard_pi_mcp_handoff(self: AcpClient) -> None:
     self._pi_mcp_handoff = ("", b"")
     if path:
         await asyncio.to_thread(discard_pi_mcp_handoff, path)
+
+
+def _muse_session_mcp_servers(self: AcpClient) -> list:
+    """MCP server array passed to a muse ``session/new`` / ``session/load``.
+
+    http(s) elements pass through untouched. stdio elements ride the session's
+    relays (:func:`_start_muse_relays`, one per element, started on the spawn
+    path): the wire copy carries the relay's ``{name, type: "http", url,
+    headers: []}`` element, because the adapter refuses raw stdio with
+    ``-32602``. A stdio element with no relay -- its start failed -- stays out;
+    the failure was recorded on the MCP report at spawn. In-memory only: the
+    spawn path warms ``_session_mcp_cache`` off the loop (harness-parity H13).
+    """
+    relays = dict(getattr(self, "_muse_relays", []) or [])
+    out = []
+    for element in self._session_mcp_servers():
+        if not isinstance(element, dict):
+            continue
+        name = element.get("name")
+        if element.get("type") == "stdio" or "command" in element:
+            relay = relays.get(name)
+            if relay is not None:
+                out.append(relay.element(name))
+            continue
+        out.append(element)
+    return out
+
+
+async def _start_muse_relays(self: AcpClient) -> None:
+    """Start one HTTP relay per stdio element of this session's MCP array.
+
+    muse-code-acp mounts only ``{name, type: "http", url, headers}`` elements,
+    so every stdio server Crew places needs a loopback relay in front of it
+    (:mod:`kiro_crew.mcp_http_relay`). A respawn starts fresh: relays an earlier
+    spawn of this session never got to discard go first, the way the copilot
+    launch file does.
+
+    A relay whose child cannot start is not fatal: the server is left out of
+    the wire array and recorded on the MCP report as failed by
+    :meth:`_begin_session_report`, which every array build reaches before its
+    request is sent. Blocking (process spawns): runs off the loop.
+    """
+    await _discard_muse_relays(self)
+    relays, pruned = await asyncio.to_thread(
+        _build_muse_relays, self.backend, self._session_mcp_servers()
+    )
+    self._muse_relays = relays
+    if pruned:
+        retained = tuple(pruned[:MCP_REPORT_BUCKET_CAP])
+        self._mcp_pruned = (*getattr(self, "_mcp_pruned", ()), *retained)
+        self._mcp_pruned_omitted = getattr(self, "_mcp_pruned_omitted", 0) + (
+            len(pruned) - len(retained)
+        )
+
+
+def _build_muse_relays(backend: str, elements: list) -> tuple[list, list]:
+    """Start relays for the stdio elements of *elements*; ``(relays, pruned)``."""
+    from kiro_crew import mcp_http_relay as _relay_mod
+
+    relays: list = []
+    pruned: list = []
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        if element.get("type") != "stdio" and "command" not in element:
+            continue
+        name = str(element.get("name") or "")
+        command = element.get("command")
+        args = element.get("args") or []
+        if not isinstance(command, str) or not command:
+            continue
+        argv = [command, *[a for a in args if isinstance(a, str)]]
+        env_pairs = element.get("env") or []
+        env = {
+            str(pair.get("name")): str(pair.get("value", ""))
+            for pair in env_pairs
+            if isinstance(pair, dict) and pair.get("name")
+        } or None
+        try:
+            relay = _relay_mod.start(argv, env)
+        except Exception as exc:
+            reason = sanitize_sink_text(
+                f"relay for {name or 'a server'} could not start ({exc})",
+                MCP_REPORT_ERROR_CAP,
+            )
+            logger.warning(
+                "%s session MCP: leaving server %r out of this session -- %s",
+                backend,
+                name,
+                reason,
+            )
+            pruned.append(PrunedServer(sanitize_sink_text(name, MCP_REPORT_NAME_CAP), reason))
+            continue
+        relays.append((name, relay))
+    return relays, pruned
+
+
+async def _discard_muse_relays(self: AcpClient) -> None:
+    """Stop this session's MCP relays and forget them. Off-loop: process reaps."""
+    relays, self._muse_relays = getattr(self, "_muse_relays", []) or [], []
+    for _name, relay in relays:
+        try:
+            await asyncio.to_thread(relay.stop)
+        except Exception:
+            continue
 
 
 async def _discard_copilot_mcp_config(self: AcpClient) -> None:

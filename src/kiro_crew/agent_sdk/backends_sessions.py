@@ -22,6 +22,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -143,7 +144,7 @@ ACP_BACKENDS_ACP_RUNTIME = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS, ACP_BAC
 
 # Backends ``AcpClient._spawn`` can construct a session for directly: kiro (the
 # resolve-and-exec branch a backend with no process adapter falls through to)
-# plus the five with an entry in ``kiro_crew.acp.harness._PROCESS_ADAPTERS``.
+# plus the six with an entry in ``kiro_crew.acp.harness._PROCESS_ADAPTERS``.
 # A POSITIVE allowlist, not "every backend except kas/codex": a future backend
 # added to ``BASELINE_SELECTABLE_BACKENDS`` with no arm here must fail closed
 # (report not-spawnable) rather than silently fall to the kiro-cli branch under
@@ -159,6 +160,7 @@ ACP_BACKENDS_ACP_CLIENT_SPAWNABLE = frozenset(
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
         ACP_BACKEND_STRANDS,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -280,6 +282,10 @@ ACP_BACKENDS_HARNESS_OWNED_SESSIONS = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
+        # muse persists sessions in its own store: post-turn ``session/load``
+        # succeeds and ``session/list``/``close``/``resume``/``fork`` are
+        # advertised (``test/fixtures/acp_frames/muse/``).
+        ACP_BACKEND_MUSE,
         # strands persists each session under the directory Crew names (its gate
         # module's ``session`` option) and restores it on ``session/load`` by id:
         # ``test/fixtures/acp_frames/strands/session-load-live.jsonl``.

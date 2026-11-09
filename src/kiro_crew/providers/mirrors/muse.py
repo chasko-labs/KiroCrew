@@ -41,12 +41,9 @@ from kiro_crew.providers.mirrors.base import (
     Concern,
     Disposition,
     Ruling,
-    SessionProjection,
 )
 
 logger = logging.getLogger(__name__)
-
-_D = Disposition
 
 #: Adapter + host releases every fact below was measured against.
 MUSE_VERIFIED_ADAPTER = "0.11.0"
@@ -70,58 +67,60 @@ class MuseCodeMirror(AgentConfigMirror):
 
     def rulings(self) -> Mapping[Concern, Ruling]:
         return {
-            Concern.MCP_SERVERS: _D(
+            Concern.MCP_SERVERS: Ruling(
                 Disposition.TRANSLATED,
                 "stdio servers travel through kiro_crew.mcp_http_relay as "
                 "{name, type: http, url, headers: []} (measured: raw stdio "
                 "refused -32602; relayed stub listed, called, "
                 "permission-gated). HTTP servers pass through unchanged.",
             ),
-            Concern.TOOL_ALLOWLIST: _D(
+            Concern.TOOL_ALLOWLIST: Ruling(
                 Disposition.DELIVERED,
                 "tools array is honoured at prompt time (measured: "
                 "no-tools turn completed with tools available and uncalled).",
             ),
-            Concern.DENIED_TOOLS: _D(
+            Concern.DENIED_TOOLS: Ruling(
                 Disposition.WITHHELD,
                 "no per-tool deny channel measured on this adapter; "
                 "disabled tools are withheld by not mounting their server. "
                 "OPEN: re-check if the adapter gains deny rules.",
             ),
-            Concern.AUTO_APPROVE: _D(
+            Concern.AUTO_APPROVE: Ruling(
                 Disposition.WITHHELD,
                 "bypassApprovals mode is never selected (same bar as goose "
                 "auto); default mode auto-settles only low-risk ops natively.",
             ),
-            Concern.MODEL: _D(
+            Concern.MODEL: Ruling(
                 Disposition.WITHHELD,
                 "model selection stays with the Muse subscription/session; "
                 "no model id is sent. OPEN: verify model pinning if the "
                 "adapter exposes it.",
             ),
-            Concern.MODEL_ALLOWLIST: _D(
+            Concern.MODEL_ALLOWLIST: Ruling(
                 Disposition.WITHHELD,
                 "same as MODEL: no allowlist channel measured.",
             ),
-            Concern.PERMISSION_MODE: _D(
+            Concern.PERMISSION_MODE: Ruling(
                 Disposition.TRANSLATED,
                 "Crew selects default (On request); escalations arrive as "
                 "session/requestPermission (measured on MCP tool call). "
                 "bypassApprovals refused.",
             ),
-            Concern.PROMPT: _D(
-                Disposition.DELIVERED,
-                "prompt blocks incl. embedded text measured working.",
+            Concern.PROMPT: Ruling(
+                Disposition.WITHHELD,
+                "not a mirror concern on any backend: the prompt reaches the "
+                "harness as ordinary prompt text (prompt blocks incl. embedded "
+                "text measured working), not through the spec projection.",
             ),
-            Concern.RESOURCES: _D(
-                Disposition.TRANSLATED,
+            Concern.RESOURCES: Ruling(
+                Disposition.WITHHELD,
                 RESOURCES_NO_READER,
             ),
-            Concern.HOOKS: _D(
+            Concern.HOOKS: Ruling(
                 Disposition.WITHHELD,
                 "no hooks channel measured on this adapter.",
             ),
-            Concern.TOOLS_SETTINGS: _D(
+            Concern.TOOLS_SETTINGS: Ruling(
                 Disposition.WITHHELD,
                 "no toolsSettings channel measured; Crew's own gate tiers "
                 "still read permission requests as on every backend.",

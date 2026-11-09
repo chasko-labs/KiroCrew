@@ -796,6 +796,22 @@ _EXPORTS_BY_OWNER: dict[str, tuple[str, ...]] = {
         "_GOOSE_BUILTIN_ARG",
         "_GOOSE_BUILTIN_DEVELOPER",
     ),
+    "kiro_crew.acp.harness.muse": (
+        "MUSE_ACP_BIN",
+        "MUSE_ACP_NPM_PKG",
+        "MUSE_CODE_BIN",
+        "MUSE_CODE_INSTALL_REMEDY",
+        "MUSE_INSTALL_COMMAND",
+        "_ENV_MUSE_ACP_BIN",
+        "_MUSE_ACP_PKG_ENTRY",
+        "_muse_acp_argv_cache",
+        "_muse_adapter_installed_version",
+        "_muse_bin_cache",
+        "_resolve_muse_acp_bin",
+        "_resolve_muse_bin",
+        "_resolve_vendored_muse_acp",
+        "MuseLaunch",
+    ),
     "kiro_crew.acp.harness.pi": (
         "PI_ACP_BIN",
         "PI_ACP_NPM_PKG",
@@ -1005,6 +1021,16 @@ if TYPE_CHECKING:  # the forwarded names, visible to type checkers and IDEs
         _ENV_GOOSE_MODE,
         _GOOSE_BUILTIN_ARG,
         _GOOSE_BUILTIN_DEVELOPER,
+    )
+    from kiro_crew.acp.harness.muse import (  # noqa: F401
+        MUSE_ACP_BIN,
+        MUSE_ACP_NPM_PKG,
+        MUSE_CODE_BIN,
+        MUSE_CODE_INSTALL_REMEDY,
+        MUSE_INSTALL_COMMAND,
+        MuseLaunch,
+        _resolve_muse_acp_bin,
+        _resolve_muse_bin,
     )
     from kiro_crew.acp.harness.opencode import (  # noqa: F401
         _ENV_OPENCODE_CONFIG_CONTENT,

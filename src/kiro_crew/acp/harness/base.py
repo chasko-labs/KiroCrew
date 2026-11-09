@@ -138,6 +138,8 @@ class ProcessSession(Protocol):
     _model: str
     _agent_version_read: bool
     _claude_adapter_disk_version: str
+    _muse_adapter_disk_version: str
+    _muse_relays: list
     _opencode_config_mcp_servers: tuple[str, ...]
     _session_harness_deny_rules: tuple[str, ...]
     _session_mcp_unhonoured: frozenset[str]
@@ -181,6 +183,12 @@ class ProcessSession(Protocol):
 
     async def _discard_copilot_mcp_config(self) -> None:
         """Remove this session's Copilot CLI launch MCP config, if one was written."""
+
+    async def _start_muse_relays(self) -> None:
+        """Start this session's stdio->HTTP MCP relays, if it has any (blocking)."""
+
+    async def _discard_muse_relays(self) -> None:
+        """Stop this session's MCP relays and forget them."""
 
     async def _seed_session_settings(self) -> None:
         """Seed the session's own settings file, best-effort."""

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from kiro_crew.agent_sdk.backends import (  # noqa: F401 - re-exported for existing importers
     ACP_BACKEND_CODEX,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     Routing,
@@ -56,6 +57,7 @@ from kiro_crew.agent_sdk.tool_gate import (  # noqa: F401 - re-exported for exis
 
 __all__ = [
     "ACP_BACKEND_CODEX",
+    "ACP_BACKEND_MUSE",
     "ACP_BACKEND_OPENCODE",
     "ACP_BACKEND_PI",
     "ADAPTER_EXPOSED_CREDENTIAL_LEAVES",

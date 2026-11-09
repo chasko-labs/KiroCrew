@@ -37,6 +37,7 @@ from kiro_crew.acp_backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -47,6 +48,7 @@ from kiro_crew.providers.mirrors.codex import CodexMirror
 from kiro_crew.providers.mirrors.copilot import CopilotMirror
 from kiro_crew.providers.mirrors.deepseek import DeepSeekMirror
 from kiro_crew.providers.mirrors.goose import GooseMirror
+from kiro_crew.providers.mirrors.muse import MuseCodeMirror
 from kiro_crew.providers.mirrors.opencode import OpenCodeMirror
 from kiro_crew.providers.mirrors.strands import StrandsMirror
 
@@ -227,6 +229,7 @@ MIRRORS: dict[str, type[AgentConfigMirror]] = {
     ACP_BACKEND_GOOSE: GooseMirror,
     ACP_BACKEND_DEEPSEEK: DeepSeekMirror,
     ACP_BACKEND_COPILOT: CopilotMirror,
+    ACP_BACKEND_MUSE: MuseCodeMirror,
     ACP_BACKEND_STRANDS: StrandsMirror,
 }
 
@@ -308,6 +311,20 @@ PROJECTIONS: dict[str, McpProjection] = {
         # rule a lower config source outranked is withheld whole
         # (providers/mirrors/opencode.py::opencode_projection).
         per_tool_deny=PerToolDeny.SETTINGS_FILE,
+    ),
+    ACP_BACKEND_MUSE: McpProjection(
+        kind=ProjectionKind.MIRROR,
+        reason=(
+            "muse.py -- the wire face alone: the session/new mcpServers array "
+            "carries relayed HTTP elements (stdio travels only through "
+            "kiro_crew.mcp_http_relay; raw stdio is refused -32602). "
+            "Measured on adapter 0.11.0 driving host 1.4.14 "
+            "(`test/fixtures/acp_frames/muse/`)."
+        ),
+        # No per-tool channel on this adapter: a switched-off tool withholds its
+        # whole server (the mirror's DENIED_TOOLS ruling), so the restriction
+        # costs availability rather than being silently dropped.
+        per_tool_deny=PerToolDeny.WHOLE_SERVER,
     ),
     ACP_BACKEND_PI: McpProjection(
         kind=ProjectionKind.BROKER_ONLY,

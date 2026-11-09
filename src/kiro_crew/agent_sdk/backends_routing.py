@@ -31,6 +31,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -438,6 +439,13 @@ ACP_BACKEND_ROUTING: dict = {
     # pi's and deepseek's member. Live capture:
     # ``test/fixtures/acp_frames/strands/permission-deny-allow-live.jsonl``.
     ACP_BACKEND_STRANDS: Routing.VERIFIED_GATE_EXTENSION,
+    # muse-code-acp asks per approval by construction: its Default mode offers
+    # every approval as a host-offered ACP choice and fails closed on cancel or
+    # stale replies, so there is nothing to seed and no gate to load -- the kiro
+    # shape. Measured: ``test/fixtures/acp_frames/muse/`` carries the mode
+    # inventory (``bypassApprovals`` never selected) and a live
+    # ``session/requestPermission`` on an MCP tool call.
+    ACP_BACKEND_MUSE: Routing.AGENT_SPEC,
 }
 
 

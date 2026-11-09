@@ -270,7 +270,12 @@ class TestEveryKnownBackendIsClassified:
     #: ``context_manager`` defaults to ``"auto"``, an operator's project may pass
     #: ``"off"``). Claiming harness-managed would be true for the bundled project
     #: only, so it declines and the gate's WARNING says so.
-    UNCLASSIFIED: frozenset = frozenset({"strands"})
+    #: ``muse``: the adapter documents ``/compact`` on host 1.4.12+, but no
+    #: compaction surface is measured on the wire yet
+    #: (``test/fixtures/acp_frames/muse/`` carries no compact capture), so neither
+    #: Crew's ``/compact`` nor a recycle at a measured fill can be driven. It
+    #: declines and the gate's WARNING says so until a capture lands.
+    UNCLASSIFIED: frozenset = frozenset({"strands", "muse"})
 
     def test_every_known_backend_is_classified_or_listed(self) -> None:
         classified = (

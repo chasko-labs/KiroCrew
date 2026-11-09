@@ -367,6 +367,9 @@ def test_core_counts_per_harness_are_pinned() -> None:
         "goose": 7,
         "kas": 7,
         "kiro": 6,
+        # Muse holds crew-tools only: no model/effort/compact/steer/member
+        # channel is measured on this adapter yet (mirror rulings WITHHELD).
+        "muse": 1,
         "opencode": 6,
         "pi": 6,
         # Crew's tools, read-only side chat, and effort and model (both moved by a
