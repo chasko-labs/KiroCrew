@@ -4,8 +4,10 @@ Backed by files in the app's data directory:
 ``~/.kiro/crew/apps/{app_name}/data/kv/{key}.json``
 
 Keys are validated to prevent path traversal. A key that is not a usable
-Windows filename is encoded into one, and ``list_keys`` decodes it back, so a
-key round-trips to the same value on every platform.
+Windows filename, or that holds an upper-case letter, is encoded into one, and
+``list_keys`` decodes it back, so a key round-trips to the same value on every
+platform, including a case-insensitive volume where ``Foo`` and ``foo`` would
+otherwise share one file.
 Values are JSON-serializable dicts or strings.
 """
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
@@ -95,10 +98,18 @@ def _encode_key(key: str) -> str:
     the fixed-width digest form instead, so the name a key maps to is bounded
     however long the key is. Only an unsafe key can reach either encoding, so a
     safe key's filename is never rewritten by length.
+
+    A key with an upper-case letter is encoded too, and its ASCII capitals are
+    escaped (``Foo`` becomes ``.enc-%46oo``), so no two keys map to names that
+    differ only in case. NTFS and APFS treat such names as one file.
+    shortcut: a lower-case non-ASCII pair that a volume folds together (``σ``
+    and ``ς``) still keeps its own names; escape non-ASCII too if one is reported.
     """
-    if _key_is_filename_safe(key):
+    if _key_is_filename_safe(key) and key == key.lower():
         return key
-    escaped = _ENCODED_STEM_PREFIX + quote(key, safe="")
+    escaped = _ENCODED_STEM_PREFIX + "".join(
+        f"%{ord(char):02X}" if "A" <= char <= "Z" else quote(char, safe="") for char in key
+    )
     if len(f"{escaped}.json".encode()) <= _MAX_FILENAME_BYTES:
         return escaped
     digest = hashlib.blake2b(key.encode(), digest_size=_DIGEST_BYTES).hexdigest()
@@ -144,6 +155,77 @@ class AppStorage:
         # tolerate a missing dir). Every read path here also treats a missing
         # directory as empty: ``get``/``delete`` gate on ``is_file`` and
         # ``list_keys`` returns ``[]`` when the dir is absent.
+        self._migrated = False
+
+    def _names(self) -> set[str]:
+        """The exact names in the key directory, empty when it cannot be listed.
+
+        A case-insensitive volume opens ``Foo.json`` for ``foo.json``, so a path
+        test cannot tell two such files apart; only the listing can.
+        """
+        try:
+            return set(os.listdir(self._kv_dir))
+        except OSError:
+            return set()
+
+    def _holds(self, path: Path) -> bool:
+        """Whether *path* is a file stored under exactly its own name."""
+        return path.is_file() and path.name in self._names()
+
+    def _migrate(self) -> None:
+        """Move every file stored under an older name to the name its key has now.
+
+        An older build kept a key with an upper-case letter under its own name
+        (``Foo.json``) or a percent-encoded one that kept the case
+        (``.enc-CON.json``). Runs before the first read or write of each
+        instance, so those keys keep their values. The name on disk tells which
+        key a file holds, even when a case-insensitive volume had folded two keys
+        into it. A file whose new name is already taken is a superseded copy,
+        the one :meth:`set` would remove. A move that fails is retried by the next
+        call.
+        """
+        if self._migrated:
+            return
+        try:
+            names = set(os.listdir(self._kv_dir))
+        except FileNotFoundError:
+            names = set()
+        except OSError:
+            return
+        done = True
+        for name in sorted(names):
+            stem = name.removesuffix(".json")
+            if stem == name or _is_digest_stem(stem):
+                continue
+            try:
+                key = _decode_stem(stem)
+                target = self._key_path(key)
+            except ValueError:  # not a key, or escapes that are not UTF-8
+                continue
+            if target.name == name:
+                continue
+            legacy = self._kv_dir / name
+            try:
+                if target.name in names:
+                    legacy.unlink()
+                elif _is_digest_stem(target.stem):
+                    value = self._read(legacy, enveloped=False)
+                    if value is None:
+                        continue
+                    atomic_write(target, json.dumps({"key": key, "value": value}, indent=2))
+                    legacy.unlink()
+                else:
+                    legacy.rename(target)
+            except OSError as exc:
+                done = False
+                logger.warning(
+                    "AppStorage[%s] could not move %s to %s: %s",
+                    self._app_name,
+                    name,
+                    target.name,
+                    exc,
+                )
+        self._migrated = done
 
     @property
     def app_name(self) -> str:
@@ -159,10 +241,11 @@ class AppStorage:
         regular file, so ``get("con")`` never opens the console.
         """
         path = self._key_path(key)
+        self._migrate()
         if path.is_file():
             return self._read(path, enveloped=_is_digest_stem(path.stem))
         fallback = self._unencoded_key_path(key)
-        if fallback is None or fallback == path or not fallback.is_file():
+        if fallback is None or fallback == path or not self._holds(fallback):
             return None
         # Written under the key's own name by a build without the encoding, so
         # the file holds the bare value however this key encodes now.
@@ -210,6 +293,7 @@ class AppStorage:
         # the dir already present and leaves an existing directory untouched, so
         # the permission model is unchanged.
         self._kv_dir.mkdir(parents=True, exist_ok=True)
+        self._migrate()
         if _is_digest_stem(path.stem):
             content = json.dumps({"key": key, "value": value}, indent=2)
         else:
@@ -219,7 +303,9 @@ class AppStorage:
         # lands, and leaving it is not inert: it is what a build without this
         # encoding reads, so it would serve that copy as current.
         superseded = self._unencoded_key_path(key)
-        if superseded is not None and superseded != path:
+        # Only a file under exactly that name: on a case-insensitive volume
+        # ``Foo.json`` would open, and remove, the key ``foo``'s file.
+        if superseded is not None and superseded != path and self._holds(superseded):
             try:
                 superseded.unlink(missing_ok=True)
             except OSError as exc:
@@ -244,8 +330,9 @@ class AppStorage:
         next.
         """
         paths = [self._key_path(key)]
+        self._migrate()
         fallback = self._unencoded_key_path(key)
-        if fallback is not None and fallback not in paths:
+        if fallback is not None and fallback not in paths and self._holds(fallback):
             paths.append(fallback)
         removed = False
         for path in paths:
@@ -280,6 +367,7 @@ class AppStorage:
         """
         if not self._kv_dir.is_dir():
             return []
+        self._migrate()
         keys: set[str] = set()
         for path in self._kv_dir.iterdir():
             if path.suffix != ".json":
