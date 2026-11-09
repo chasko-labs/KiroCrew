@@ -64,6 +64,7 @@ import type { AppInfo, NormalizedRegistryEntry, RegistryEntry } from './appDetai
 import { actionGrant } from '../composerActions/composerActionRegistry'
 import { memoryAccessLabel } from '../components/appstore/memoryAccessLabel'
 import { managerLabel, originLabel } from './appDetailPageLabels'
+import { parseMarketSource } from '../lib/marketSource'
 // The page's parts live in sibling owners that never import this module:
 // `AppDetailPageArt.tsx` (the hero banner and the screenshot gallery, each with
 // its local-art second chance), `appDetailPageTypes.ts` (the page's view
@@ -940,6 +941,9 @@ export default function AppDetailPage() {
   // rest on it (see PlatformConfig.requiresDesktopApp in manifest.py).
   const desktopOnly = needsDesktopApp(app)
   const canUpdate = app.lifecycle === 'gateway'
+  // An app installed from Kiro Space records `market:<ref>@<n>`; its updates come
+  // from there, so the folder Sync does not apply. Installed records only.
+  const market = app.installed ? parseMarketSource(app.source) : null
   const canUninstall = app.lifecycle !== 'locked'
   // Resource lists, derived once. `manifest` is absent for a registry-only app,
   // and `normalizeInstalledApp` fills the lists for an installed one — so the
@@ -1540,7 +1544,8 @@ export default function AppDetailPage() {
                     </>
                   )}
                   {canUpdate && app.updateAvailable && <Btn {...uiLocation('apps.detail.update')} onClick={handleInstall} disabled={actionBusy || installRefusedForGood} title={installDisabledTitle} className="!bg-[var(--info)] !text-info-fg hover:!opacity-80">{isActionRunning('install') ? <><Loader2 size={14} className="animate-spin" /> {i18nT('pages.appDetailPage.updating')}</> : <><ArrowUp size={14} /> {i18nT('pages.appDetailPage.update')}</>}</Btn>}
-                  {canUpdate && !app.updateAvailable && <Btn {...uiLocation('apps.detail.sync')} onClick={() => { if (!actionBusy) void handleAction('update') }} aria-disabled={isActionRunning('update') || undefined} disabled={actionBusy && !isActionRunning('update')} className="aria-disabled:cursor-not-allowed aria-disabled:opacity-30" title={i18nT('pages.appDetailPage.sync_app_from_its_source_directory')}><RefreshCw size={14} /> {i18nT('pages.appDetailPage.sync')}</Btn>}
+                  {canUpdate && !app.updateAvailable && market && <span className="text-[13px] text-muted">{i18nT('pages.appDetailPage.market_updates_from')}</span>}
+                  {canUpdate && !app.updateAvailable && !market && <Btn {...uiLocation('apps.detail.sync')} onClick={() => { if (!actionBusy) void handleAction('update') }} aria-disabled={isActionRunning('update') || undefined} disabled={actionBusy && !isActionRunning('update')} className="aria-disabled:cursor-not-allowed aria-disabled:opacity-30" title={i18nT('pages.appDetailPage.sync_app_from_its_source_directory')}><RefreshCw size={14} /> {i18nT('pages.appDetailPage.sync')}</Btn>}
                   {canUninstall && <Btn {...uiLocation('apps.detail.uninstall')} danger onClick={() => handleAction('uninstall')} disabled={actionBusy}><Trash2 size={14} /> {i18nT('pages.appDetailPage.uninstall')}</Btn>}
                 </>
               )}
@@ -1978,6 +1983,7 @@ export default function AppDetailPage() {
                   )}
                 </div>
               )}
+              {market && <div>{i18nT('pages.appDetailPage.market_installed_from', { ref: market.ref, version: market.version })}</div>}
               {app.installedAt && <div>{i18nT('pages.appDetailPage.installed_on', { date: fmtDateNumeric(app.installedAt) })}</div>}
               {app.origin && (
                 <div>
