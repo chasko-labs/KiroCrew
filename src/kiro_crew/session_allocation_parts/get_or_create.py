@@ -2,7 +2,8 @@
 
 ``get_or_create`` holds a request at a fenced key's door, then runs
 ``_get_or_create_impl``: claim the live session when one is registered
-(``_reacquire_and_validate``, evicting a dead one with ``_evict_stale_session``), or
+(``_reacquire_and_validate``, evicting a dead one, or one spawned under a looser
+``agent.sandbox`` tier than is now configured, with ``_evict_stale_session``), or
 reserve the key, take a cold-start permit (``_held_start_permit``), claim a warm-pool
 provider or start a new one on the resolved model and AWS profile, and register it --
 refusing the registration, and hard-killing the started provider
@@ -47,11 +48,13 @@ from kiro_crew.aws_project_profiles import (
 from kiro_crew.kiro_prerequisite import pre_spawn_identity, spawn_pid, stamp_spawn_identity
 from kiro_crew.metrics.sessions import (
     END_REASON_EVICTED,
+    END_REASON_SANDBOX_TIGHTENED,
     discard_session_start,
     record_session_ended,
     record_session_started,
 )
 from kiro_crew.runtime_ownership import acquire_session_lease, release_session_lease
+from kiro_crew.session_allocation_parts.companions import sandbox_tier_tightened
 from kiro_crew.session_allocation_parts.errors import (
     SessionBusyError,
     SessionClosingError,
@@ -126,6 +129,11 @@ def _note_skipped_hidden_cwd(provider: Any, skipped_cwd: str) -> None:
     )
 
 
+def _sandbox_tightened(self: SessionAllocationService, provider: Any) -> bool:
+    """Whether ``agent.sandbox`` is now stricter than the tier *provider* was spawned under."""
+    return sandbox_tier_tightened(provider.sandbox_mode, self._owner._cfg.agent.sandbox)
+
+
 async def _session_runs_remotely(session_key: str) -> bool:
     """Whether this session is bound to a remote session environment.
 
@@ -145,6 +153,7 @@ async def _reacquire_and_validate(
     *,
     wait_if_busy: bool = True,
     reservation: object | None = None,
+    refuse_looser_tier: bool = True,
 ) -> bool:
     """Acquire with the global lock released, then validate exact identity -- and meet the key's ending fence again.
 
@@ -158,7 +167,9 @@ async def _reacquire_and_validate(
     (which invalidates the token) refuses too; the refusal releases the
     semaphore and ``get_or_create`` turns it into a wait for the lift and a
     fresh allocation. ``open_task_session`` passes no token and is refused
-    while the fence is up, as at its entry.
+    while the fence is up, as at its entry. A session spawned under a looser
+    ``agent.sandbox`` than is now configured is refused too, unless the caller
+    recycles it itself (``refuse_looser_tier=False``).
     """
     if not wait_if_busy and session.semaphore.locked():
         raise SessionBusyError(key)
@@ -176,6 +187,8 @@ async def _reacquire_and_validate(
                 self._sessions.get(key) is session
                 and not session.retire_on_identity_change
                 and self._deps.provider_effectively_alive(session.provider)
+                # After the permit is held, so a running turn finishes first.
+                and not (refuse_looser_tier and self._sandbox_tightened(session.provider))
             )
     except BaseException:
         # The held-semaphore contract was never returned to the caller
@@ -207,23 +220,59 @@ def _release_reacquired(self: SessionAllocationService, key: str, session: Any) 
     session.semaphore.release()
 
 
-async def _evict_stale_session(self: SessionAllocationService, key: str, session: Any) -> None:
-    """Pop only the observed stale object and close it outside the lock."""
+async def _evict_stale_session(
+    self: SessionAllocationService, key: str, session: Any, *, held_by_caller: bool = False
+) -> None:
+    """Pop only the observed stale object and close it outside the lock.
+
+    A live session evicted because ``agent.sandbox`` is now stricter than its spawn
+    tier is a recycle: its queued follow-ups are parked for the successor, and its
+    whole process tree is killed before the shutdown. A turn that took its permit
+    since the claim refused it (``try_acquire`` needs no claim) keeps it: the next
+    claim recycles it. ``held_by_caller`` says the permit is the caller's own.
+    """
     dead: LLMProvider | None = None
+    tightened = False
     async with self._lock:
         if self._sessions.get(key) is session:
+            # An identity retirement keeps its own eviction, whatever the tier.
+            tightened = (
+                not session.retire_on_identity_change
+                and self._deps.provider_effectively_alive(session.provider)
+                and self._sandbox_tightened(session.provider)
+            )
+            if tightened and not held_by_caller and session.semaphore.locked():
+                return
             del self._sessions[key]
             self.advance_ownership_generation(key)
             dead = session.provider
+            if tightened:
+                # Same lock hold as the pop, as ``reset`` parks them.
+                self._owner._lifecycle_boundary()._park_reset_queue(key, session)
             # Same lock hold as the removal, before any await: a turn still
             # holding this permit is recorded and its parked claimants woken,
             # exactly as every lifecycle teardown verb does.
             self._owner.retire_turn_permit(key, session)
             # Same tick as the removal. Left unrecorded, the start crumb
             # survives and the next boot calls this a crash.
-            await record_session_ended(key, end_reason=END_REASON_EVICTED)
+            await record_session_ended(
+                key,
+                end_reason=END_REASON_SANDBOX_TIGHTENED if tightened else END_REASON_EVICTED,
+            )
     if dead is not None:
         await asyncio.to_thread(self._deps.unlink_session_queue, session)
+        if tightened:
+            self._deps.logger.info("Recycling %s under a stricter agent.sandbox", key)
+            # Released first: the provider's own lease makes the kill gate refuse it.
+            await release_session_lease(dead)
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    self._deps.get_subprocess_executor(),
+                    self._deps.get_sync_kill_provider(),
+                    dead,
+                )
+            except Exception:
+                self._deps.logger.warning("Tree kill failed for %s", key, exc_info=True)
         try:
             await dead.shutdown()
         except Exception:

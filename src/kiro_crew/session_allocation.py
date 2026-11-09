@@ -292,6 +292,8 @@ class _AllocationOwner(Protocol):
 
     def retire_turn_permit(self, key: str, session: Any) -> None: ...
 
+    def _lifecycle_boundary(self) -> Any: ...
+
     def get_provider(self, key: str) -> LLMProvider | None: ...
 
     async def get_subagent_runtime(
@@ -320,6 +322,7 @@ class _AllocationOwner(Protocol):
         *,
         wait_if_busy: bool = True,
         reservation: object | None = None,
+        refuse_looser_tier: bool = True,
     ) -> bool: ...
 
     async def _evict_stale_session(self, key: str, session: Any) -> None: ...
@@ -792,6 +795,7 @@ class SessionAllocationService:
     _reacquire_and_validate = _sa_get_or_create._reacquire_and_validate
     _release_reacquired = _sa_get_or_create._release_reacquired
     _evict_stale_session = _sa_get_or_create._evict_stale_session
+    _sandbox_tightened = _sa_get_or_create._sandbox_tightened
     _is_member_key = staticmethod(_sa_get_or_create._is_member_key)
     _crew_pins_effort = _sa_get_or_create._crew_pins_effort
     _dispatch_hard_kill = _sa_get_or_create._dispatch_hard_kill

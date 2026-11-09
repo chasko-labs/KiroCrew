@@ -1298,6 +1298,7 @@ class TestHotReload:
 
         new = SimpleNamespace(degraded_sections=frozenset())
         change = SimpleNamespace(
+            old=None,
             new=new,
             changed=frozenset({"agents.atlas.acp_backend"}),
             touched=lambda *prefixes: False,

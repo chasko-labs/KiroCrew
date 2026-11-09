@@ -40,6 +40,7 @@ from kiro_crew.metrics.sessions import (
     record_session_ended,
     record_session_started,
 )
+from kiro_crew.session_allocation_parts.companions import sandbox_tier_tightened
 from kiro_crew.start_priority import PrioritySemaphore, StartPriority
 
 if TYPE_CHECKING:
@@ -167,6 +168,8 @@ class _BackgroundOwner(Protocol):
         self,
         key: str,
         session: _BackgroundSessionEntry,
+        *,
+        refuse_looser_tier: bool = True,
     ) -> bool: ...
 
 
@@ -785,14 +788,15 @@ class BackgroundSessionRuntime:
             )
             return True
 
-    async def retire_for_agent_env_change(self) -> bool:
+    async def retire_for_agent_env_change(self, reason: str = "agent.env changed") -> bool:
         """Free the shared runtime's slot after an ``agent.env`` change.
 
         The runtime is one long-lived process that every background and cron
         session demuxes onto, and it carries the environment it was spawned with.
         Left in its slot it would serve the old ``agent.env`` until it went
         stale (up to the 6 h age ceiling). Freeing the slot makes the next
-        ``get_bg_session`` spawn a replacement that reads the new map.
+        ``get_bg_session`` spawn a replacement that reads the new map. A stricter
+        ``agent.sandbox`` frees it the same way (*reason* names which).
 
         The runtime is PARKED, busy or idle, never killed here: its in-flight
         sessions finish on it, and the drain reap kills it once they have. It
@@ -811,7 +815,7 @@ class BackgroundSessionRuntime:
             if runtime is None:
                 return False
             mark_identity_parked(runtime, time.monotonic())
-            await self._detach_bg_runtime_locked(runtime, "agent.env changed", park_only=True)
+            await self._detach_bg_runtime_locked(runtime, reason, park_only=True)
             return True
 
     async def _provider_backed_bg_session(
@@ -1163,8 +1167,10 @@ class BackgroundSessionRuntime:
 
         # Take the same semaphore a turn takes, then re-validate identity and
         # liveness under the owner lock. False means the helper already released
-        # the semaphore.
-        if not await self._owner._reacquire_and_validate(background_key, session):
+        # the semaphore. A looser sandbox tier is not refused: it is a reason below.
+        if not await self._owner._reacquire_and_validate(
+            background_key, session, refuse_looser_tier=False
+        ):
             return
         try:
             provider = session.provider
@@ -1180,7 +1186,9 @@ class BackgroundSessionRuntime:
             ) and not self._owner._bg_backend_supports_runtime()
             pct = provider.context_usage_pct()
             post_compaction = pct == 0.0 and self._deps.context_pct_is_unknown(provider)
-            if overflowed:
+            if sandbox_tier_tightened(provider.sandbox_mode, self._owner._cfg.agent.sandbox):
+                reason = "agent.sandbox is stricter than its spawn tier"
+            elif overflowed:
                 reason = f"prompt too long for the model window (context reported at {pct:.0f}%)"
             elif pct >= self._deps.bg_recycle_pct:
                 reason = f"context at {pct:.0f}%"
