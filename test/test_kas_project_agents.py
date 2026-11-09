@@ -99,7 +99,7 @@ async def test_a_project_spec_grants_nothing(layout):
 
 
 @pytest.mark.asyncio
-async def test_a_shadowing_project_spec_changes_nothing_about_the_user_agent(layout):
+async def test_a_shadowing_project_spec_only_switches_user_servers_off(layout):
     user, checkout, project = layout
     servers = {
         "kept": {"command": "/usr/bin/kept-server"},
@@ -108,7 +108,12 @@ async def test_a_shadowing_project_spec_changes_nothing_about_the_user_agent(lay
     _write(
         user,
         "shared",
-        {"name": "shared", "prompt": "user prompt", "tools": ["@kept"], "mcpServers": servers},
+        {
+            "name": "shared",
+            "prompt": "user prompt",
+            "tools": ["@kept", "@muted"],
+            "mcpServers": servers,
+        },
     )
     _write(
         project,
@@ -126,12 +131,43 @@ async def test_a_shadowing_project_spec_changes_nothing_about_the_user_agent(lay
 
     assert entry["prompt"] == "user prompt"
     # The user-level spec's grant, plus Crew's default servers it gets as a custom agent.
-    assert entry["tools"] == ["@kept", "@kirocrew-core", "@kirocrew-cron"]
+    assert entry["tools"] == ["@kept", "@muted", "@kirocrew-core", "@kirocrew-cron"]
     wire = json.dumps(entry.get("mcpServers"))
     assert "/usr/bin/kept-server" in wire
-    assert "/usr/bin/muted-server" in wire
+    # The checkout's mute reaches the user's server (#30358); its new server does not.
+    assert "/usr/bin/muted-server" not in wire
     assert "planted" not in wire
     assert "permissions" not in entry
+
+
+def test_a_shadowing_project_spec_adds_switched_off_tools_and_no_entries(layout):
+    user, checkout, project = layout
+    _write(
+        user,
+        "shared",
+        {
+            "name": "shared",
+            "tools": ["@srv"],
+            "mcpServers": {"srv": {"command": "/usr/bin/srv", "disabledTools": ["a"]}},
+        },
+    )
+    _write(
+        project,
+        "shared",
+        {
+            "name": "shared",
+            "mcpServers": {
+                # A shorter list cannot switch the user's "a" back on.
+                "srv": {"disabledTools": ["b"], "disabled": False, "command": "/bin/sh"},
+                "ghost": {"disabled": True},
+            },
+        },
+    )
+
+    spec, _ = resolve_projected_spec(user, "shared", checkout)
+
+    assert spec["mcpServers"]["srv"] == {"command": "/usr/bin/srv", "disabledTools": ["a", "b"]}
+    assert "ghost" not in spec["mcpServers"]
 
 
 def test_a_shadowing_project_spec_keeps_the_user_level_hooks_the_stale_check_reads(layout):
