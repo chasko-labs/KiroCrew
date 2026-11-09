@@ -763,6 +763,10 @@ BENIGN_PACKAGE_SPAWNS: frozenset[str] = frozenset(
         # the process identity could not signal our own already-running child.
         "cloud/ssm.py::_kill_tree_windows",
         "cloud/ssm.py::_run_install_command",
+        # Before the operator-confirmed plugin install, with no terminal: the fixed
+        # argv `sudo -n true`, no shell, stdio on DEVNULL, only the exit code read.
+        # Same classification as `_run_install_command` beside it.
+        "cloud/ssm.py::_sudo_cannot_prompt",
         "cloud/ssm.py::open_port_forward",
         # Local identity probe: `<resolved kiro-cli> whoami --format json`, a
         # fixed argv with no shell and no agent-reachable input — the binary
