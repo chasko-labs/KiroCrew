@@ -1,0 +1,2 @@
+{"direction": "client", "message": {"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": "/tmp", "mcpServers": [{"name": "stub", "command": "python3", "args": ["/tmp/stubmcp.py"]}]}}}
+{"direction": "adapter", "message": {"jsonrpc": "2.0", "id": 2, "error": {"code": -32602, "message": "Invalid params"}}}
