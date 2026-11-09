@@ -46,7 +46,19 @@ function createFamilyTakeover({
   // observe, and the prompt is reachable only after a LOCAL owner is known.
   const MANUAL_QUIT_ROUNDS = 3;
 
-  async function resolveConflictByManualQuit(other, otherVersion) {
+  async function resolveConflictByManualQuit(other, otherVersion, { holder = "" } = {}) {
+    // A gateway with no app window ("service": a background service; "orphan":
+    // launchd's child but no launchd job) is stopped, not quit. The prompt names
+    // one thing, the gateway, and says where the command runs, in the wording of
+    // the stuck-gateway dialog (holder-decision.js).
+    const stopCommand = `kirocrew stop --port ${PORT}`;
+    const step = holder ? `Stop the ${other.displayName} gateway` : `Quit ${other.displayName}`;
+    const retry = holder ? "I stopped it — Retry" : "I quit it — Retry";
+    const how = holder
+      ? `\n\nRun this command in Terminal:\n${stopCommand}${holder === "service"
+        ? "\n\nIf it starts again by itself, stop the service that restarts it."
+        : ""}`
+      : "";
     // Port free is not lock free: an uncapturable listener must refuse, not read
     // as "already exited" and race gateway.lock. Stricter than unverifiedIncumbent
     // (Windows-only): reaching this prompt proved the probe names PIDs here.
@@ -59,11 +71,15 @@ function createFamilyTakeover({
       const { response } = await dialog.showMessageBox({
         type: "warning",
         title: `${other.displayName} is running`,
-        message: `${other.displayName} (${otherVersion}) is already running with your Kiro Crew data.`,
-        detail: round === 1
-          ? `Quit ${other.displayName}, then choose “I quit it — Retry”.`
-          : `${other.displayName} was still running a moment ago. Quit it, then choose “I quit it — Retry”.`,
-        buttons: ["I quit it — Retry", "Cancel"],
+        // A windowless gateway's retry round says so in its heading, so it does
+        // not read as the same prompt again.
+        message: holder && round > 1
+          ? `${other.displayName} is still running.`
+          : `${other.displayName} (${otherVersion}) is already running with your Kiro Crew data.`,
+        detail: (round === 1
+          ? `${step}, then choose “${retry}”.`
+          : `${other.displayName} was still running a moment ago. ${step}, then choose “${retry}”.`) + how,
+        buttons: [retry, "Cancel"],
         defaultId: 0,
         cancelId: 1,
       });
@@ -80,7 +96,10 @@ function createFamilyTakeover({
     await dialog.showMessageBox({
       type: "error",
       message: `${other.displayName} is still running.`,
-      detail: `This launch was cancelled. Quit ${other.displayName}, then open this app again.`,
+      // Reached only when the retries ran out; Cancel returns above.
+      detail: holder
+        ? `${other.displayName} kept running, so this launch stopped. ${step}, then open this app again.${how}`
+        : `This launch was cancelled. ${step}, then open this app again.${how}`,
       buttons: ["OK"],
     });
     return "abort";
@@ -90,12 +109,16 @@ function createFamilyTakeover({
    * The other family owns the port: prompt for the takeover and report what
    * the launch should do next ("spawn", "abort" or "probe-failed").
    *
-   * @param {{otherFamily: string, otherVersion: string}} decision
+   * @param {{otherFamily: string, otherVersion: string, holder?: "service"|"orphan"}} decision
    *        decideGatewayAction's non-reuse verdict.
    */
   async function resolveFamilyConflict(decision) {
     const other = FAMILY_META[decision.otherFamily];
     glog(`gateway on :${PORT} is owned by ${other.appName} (${decision.otherVersion}) — prompting for takeover`);
+    if (decision.holder) {
+      glog(`the holder is ${other.appName}'s gateway with no app window (${decision.holder}) — asking the user to stop it`);
+      return resolveConflictByManualQuit(other, decision.otherVersion, { holder: decision.holder });
+    }
     const canTakeover = processObj.platform === "darwin";
     if (!canTakeover) {
       glog(`canTakeover=false on ${processObj.platform} — no supported way to quit ${other.appName} from here; offering a manual-quit retry`);

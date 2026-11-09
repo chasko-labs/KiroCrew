@@ -155,6 +155,11 @@ const IDENTITY_SITES = [
     times: 1,
   },
   {
+    what: "cross-edition prompt: a service holder is re-checked against launchd's job list for its wording",
+    code: 'if (decision.holder === "service" && (await staleDialogOwner("service")) !== "service") {',
+    times: 1,
+  },
+  {
     what: "unresponsive holder: probe who holds the port that failed its health check",
     code: 'const localOwner = await probeGatewayPortOwner(PORT);',
     times: 1,
