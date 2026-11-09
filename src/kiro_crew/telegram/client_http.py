@@ -327,8 +327,9 @@ async def _api_request(
     cool-down once and retry instead.
 
     ``err_out``, when supplied, is populated with ``error_code`` and
-    ``description`` on a Telegram-level failure. Callers use it to tell a
-    PERMANENT failure (the method does not exist on this server) apart from
+    ``description`` on a Telegram-level failure, and with ``transport_error``
+    (the exception's class name) on a network failure. Callers use it to tell
+    a PERMANENT failure (the method does not exist on this server) apart from
     a transient one (rate limit, network), so they can stop re-probing an
     unsupported method without disabling it on a blip.
 
@@ -430,6 +431,8 @@ async def _api_request(
                     err_code=None,
                     timed_out=isinstance(exc, asyncio.TimeoutError),
                 )
+            if err_out is not None:
+                err_out["transport_error"] = type(exc).__name__
             # Log only the exception type — its str() can embed the request
             # URL, which contains the bot token (a registered credential).
             logger.warning("Telegram API %s transport error: %s", method, type(exc).__name__)
