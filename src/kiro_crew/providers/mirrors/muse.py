@@ -1,0 +1,138 @@
+"""Muse Code's agent-config mirror (``muse-code-acp`` adapter + ``muse serve``).
+
+Measured against @bex-co/muse-code-acp 0.11.0 driving host 1.4.14
+(SDK 1.4.12), 2026-11-09, NOT re-inferred. Every claim below names the
+probe that produced it; anything unmeasured is marked open.
+
+Wire facts:
+* ``initialize`` answers protocolVersion 1; prompt image+embeddedContext;
+  mcpCapabilities ``{"http": true}`` ONLY; loadSession true; session
+  list/close/resume/fork; interactivePermissions true.
+* ``session/new`` REQUIRES cwd + mcpServers. A stdio-shaped element is
+  refused with ``-32602`` (expects ``url``): unlike opencode, this
+  adapter does NOT tolerate untagged stdio members. The accepted shape is
+  ``{name, type: "http", url, headers: []}`` (headers array required).
+* ``session/load`` needs the full params and fails pre-turn ("not found
+  in the muse session store" — the store write happens on the first
+  turn); post-turn load succeeds and echoes the mode inventory.
+* Modes: ``default`` ("On request" — approvals offered through ACP
+  permission requests unless the native policy settles them),
+  ``readOnly``, ``plan``, ``bypassApprovals`` (auto-approve — NEVER
+  selected, same bar as goose ``auto``), ``rejectApprovals``.
+* Permission frames: low-risk ops auto-settle with no frame (measured:
+  /tmp file write, ~/.ssh read — both completed, file verified). The
+  ``session/requestPermission`` plumbing is in the adapter and forwards
+  to the client; a live escalation frame was OBSERVED for an MCP tool
+  call (``mcp__stub__stub_ping``) via the relay below.
+* MCP via :mod:`kiro_crew.mcp_http_relay`: a stdio stub behind the relay
+  was listed, called by the model, and permission-gated end to end.
+  stdio travels ONLY through the relay — never sent raw.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Mapping
+
+from kiro_crew.acp_backends import ACP_BACKEND_MUSE
+from kiro_crew.providers.mirrors.base import (
+    RESOURCES_NO_READER,
+    AgentConfigMirror,
+    Concern,
+    Disposition,
+    Ruling,
+    SessionProjection,
+)
+
+logger = logging.getLogger(__name__)
+
+_D = Disposition
+
+#: Adapter + host releases every fact below was measured against.
+MUSE_VERIFIED_ADAPTER = "0.11.0"
+MUSE_VERIFIED_HOST = "1.4.14"
+MUSE_VERIFIED_SDK = "1.4.12"
+
+#: npm installer for the adapter (mirrors opencode's pinned-major style;
+#: re-measure before raising).
+MUSE_ADAPTER_INSTALL = "npm i -g @bex-co/muse-code-acp@0"
+
+#: Permission mode Crew selects. ``default`` routes escalations through ACP;
+#: ``bypassApprovals`` is refused the way goose ``auto`` is.
+MUSE_PERMISSION_MODE = "default"
+MUSE_REFUSED_MODES = ("bypassApprovals",)
+
+
+class MuseCodeMirror(AgentConfigMirror):
+    """Projects the agent spec onto the Muse ACP adapter."""
+
+    backend: str = ACP_BACKEND_MUSE
+
+    def rulings(self) -> Mapping[Concern, Ruling]:
+        return {
+            Concern.MCP_SERVERS: _D(
+                Disposition.TRANSLATED,
+                "stdio servers travel through kiro_crew.mcp_http_relay as "
+                "{name, type: http, url, headers: []} (measured: raw stdio "
+                "refused -32602; relayed stub listed, called, "
+                "permission-gated). HTTP servers pass through unchanged.",
+            ),
+            Concern.TOOL_ALLOWLIST: _D(
+                Disposition.DELIVERED,
+                "tools array is honoured at prompt time (measured: "
+                "no-tools turn completed with tools available and uncalled).",
+            ),
+            Concern.DENIED_TOOLS: _D(
+                Disposition.WITHHELD,
+                "no per-tool deny channel measured on this adapter; "
+                "disabled tools are withheld by not mounting their server. "
+                "OPEN: re-check if the adapter gains deny rules.",
+            ),
+            Concern.AUTO_APPROVE: _D(
+                Disposition.WITHHELD,
+                "bypassApprovals mode is never selected (same bar as goose "
+                "auto); default mode auto-settles only low-risk ops natively.",
+            ),
+            Concern.MODEL: _D(
+                Disposition.WITHHELD,
+                "model selection stays with the Muse subscription/session; "
+                "no model id is sent. OPEN: verify model pinning if the "
+                "adapter exposes it.",
+            ),
+            Concern.MODEL_ALLOWLIST: _D(
+                Disposition.WITHHELD,
+                "same as MODEL: no allowlist channel measured.",
+            ),
+            Concern.PERMISSION_MODE: _D(
+                Disposition.TRANSLATED,
+                "Crew selects default (On request); escalations arrive as "
+                "session/requestPermission (measured on MCP tool call). "
+                "bypassApprovals refused.",
+            ),
+            Concern.PROMPT: _D(
+                Disposition.DELIVERED,
+                "prompt blocks incl. embedded text measured working.",
+            ),
+            Concern.RESOURCES: _D(
+                Disposition.TRANSLATED,
+                RESOURCES_NO_READER,
+            ),
+            Concern.HOOKS: _D(
+                Disposition.WITHHELD,
+                "no hooks channel measured on this adapter.",
+            ),
+            Concern.TOOLS_SETTINGS: _D(
+                Disposition.WITHHELD,
+                "no toolsSettings channel measured; Crew's own gate tiers "
+                "still read permission requests as on every backend.",
+            ),
+        }
+
+    def session_params(self, agent: str | None, **kwargs: Any) -> dict[str, Any]:
+        """Wire face: nothing beyond the shared array (relayed by the client).
+
+        The stdio->relay rewrite happens on the spawn path that owns the
+        relay lifecycles, not here: this method stays a synchronous
+        in-memory read per the shared-call-site rule.
+        """
+        return {}
