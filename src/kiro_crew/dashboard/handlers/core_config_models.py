@@ -61,12 +61,33 @@ def _advertised_evidence_provider(
         if not callable(getter):
             continue
         try:
-            ids = advertised_model_ids(getter())
+            ids = advertised_model_ids(getter()) or _kas_select_ids(provider, pb)
         except Exception:
             continue
         if ids:
             return provider, ids
     return None
+
+
+def _kas_select_ids(provider: object, backend: str | None) -> list[str]:
+    """The ids a live KAS session's ``model`` select lists, for judging a saved pin.
+
+    KAS sends no ``models`` object, so ``available_models()`` is empty there and a
+    pin the engine refuses on every prompt was saved unchecked. The select is the
+    list the engine serves the signed-in account (``agent_sdk/kas_model_catalog.py``
+    reads it as that account's catalog, and an id outside it fails each prompt with
+    ``InvalidModelError``). Read here only to refuse a SAVE; the session's own
+    advertised list and the picker do not change.
+    """
+    from kiro_crew.agent_sdk.backends import ACP_BACKEND_KAS
+    from kiro_crew.agent_sdk.kas_model_catalog import catalog_rows_from_session
+
+    if backend != ACP_BACKEND_KAS:
+        return []
+    options = getattr(provider, "acp_config_options", None)
+    if not isinstance(options, list):
+        return []
+    return [row["model_id"] for row in catalog_rows_from_session({"configOptions": options})]
 
 
 def _active_advertised_ids(request: web.Request, *, backend: str | None = None) -> list[str] | None:

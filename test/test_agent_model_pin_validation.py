@@ -747,6 +747,76 @@ class TestSavePathRefusesAnUnusablePin:
         assert cfg.agents[seeded_agent].model != "pending-model"
 
 
+def _select_provider(backend: str, *ids: str) -> SimpleNamespace:
+    """A live session that lists its models only in a ``configOptions`` select (KAS)."""
+    select = {
+        "type": "select",
+        "id": "model",
+        "currentValue": "auto",
+        "options": [{"value": i, "name": i} for i in ids],
+    }
+    return SimpleNamespace(
+        client=SimpleNamespace(backend=backend),
+        available_models=lambda: [],
+        acp_config_options=[select],
+    )
+
+
+class TestKasSelectJudgesASavedPin:
+    """#29724: KAS lists its models only in the select, and a pin outside it was saved."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["post", "put"])
+    @pytest.mark.parametrize("model, status", [("claude-sonnet-4.5", 200), ("gpt-x", 400)])
+    async def test_the_kas_select_decides(
+        self, seeded_agent, method: str, model: str, status: int
+    ) -> None:
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        app = _crud_app()
+        app["state"] = SimpleNamespace(
+            sessions=SimpleNamespace(
+                active_providers=lambda: [
+                    _select_provider(ACP_BACKEND_KAS, "auto", "claude-sonnet-4.5")
+                ]
+            )
+        )
+        name = "kaspin" if method == "post" else seeded_agent
+        body = {"model": model}
+        if method == "post":
+            body.update({"name": name, "kiro_agent": "kirocrew"})
+
+        async with TestClient(TestServer(app)) as client:
+            response = await getattr(client, method)(
+                "/api/agents" if method == "post" else f"/api/agents/{name}",
+                json=body,
+            )
+            assert response.status == status, await response.text()
+            if status == 400:
+                payload = await response.json()
+                assert payload["code"] == "invalid_model"
+                assert "claude-sonnet-4.5" in payload["error"]
+
+        agents = KiroCrewConfig.load().agents
+        stored = agents[name].model if name in agents else None
+        assert (stored == model) is (status == 200)
+
+    @pytest.mark.asyncio
+    async def test_another_harness_select_is_not_read(self, seeded_agent) -> None:
+        """Only KAS's select is its served list; another host's stays unknown."""
+        app = _crud_app()
+        app["state"] = SimpleNamespace(
+            sessions=SimpleNamespace(
+                active_providers=lambda: [_select_provider(ACP_BACKEND_KIRO, "auto", "x-model")]
+            )
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            response = await client.put(f"/api/agents/{seeded_agent}", json={"model": "gpt-x"})
+
+        assert response.status == 200
+
+
 class TestNoCatalogRefusesAPinKiroHasNoIdFor:
     def test_names_the_spelling_and_suggests_no_other_id(self, monkeypatch):
         from kiro_crew.dashboard.handlers.core import _validate_role_model
