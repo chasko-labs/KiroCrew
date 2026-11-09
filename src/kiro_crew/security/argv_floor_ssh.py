@@ -1081,19 +1081,17 @@ def _is_ssh_to_self(text_lower: str) -> bool:
         disqualified: "bool | None" = None
         for i, token in enumerate(tokens):
             verb = _ssh_family_verb(token)
-            # A verb read through a bare glob (``s?h``, a lone ``*``) expands only
-            # in the working directory, so it already spends the one filesystem
-            # expansion this floor models and a glob operand after it is not read
-            # as this host.  Two wildcard words in a row are every five-field cron
-            # schedule (``0 * * * *``), and a working directory that expands both
-            # into a self connection also makes a lone ``*`` that whole command
-            # line, which no static floor reads.  A verb glob with a directory part
-            # (``/usr/bin/s?h``) expands outside it, so its operands keep glob
-            # host matching.
+            # A verb word made only of ``*`` matches every file in the working
+            # directory, so a glob operand after it is not read as this host.
+            # Two such words in a row are every five-field cron schedule
+            # (``0 * * * *``), and a directory that expands both into a self
+            # connection also makes a lone ``*`` that whole command line, which
+            # no static floor reads.  A verb glob with any other character
+            # (``s?h``, ``s[s]h``, ``?sh``, ``ss*``, ``/usr/bin/s?h``) is aimed
+            # at an ssh program, so its operands keep glob host matching: a
+            # caller can create the ``ssh`` and ``localhost`` files it expands to.
             glob_verb = (
-                verb is not None
-                and _ssh_verb_basename(token) != verb
-                and not any(sep in token for sep in "/\\")
+                verb is not None and _ssh_verb_basename(token) != verb and not token.strip("*")
             )
             if verb is None and bound_program_verbs:
                 stripped_prog = token.strip("\"'")

@@ -736,10 +736,10 @@ class TestSandboxEscapeSshSelf:
             "0 9 * * 1-5",
             "*/15 * * * *",
             "it runs on the cron schedule 0 * * * * (top of every hour).",
-            # The residual this costs: a bare glob verb and its glob host both
-            # expand in a working directory the caller filled, which already
-            # makes a lone ``*`` the whole connection.
-            "s?h local*",
+            # The residual this costs: a verb word of only ``*`` and its glob
+            # host both expand in a working directory the caller filled, which
+            # already makes a lone ``*`` the whole connection.
+            "** *",
         ],
     )
     def test_a_glob_host_after_a_glob_verb_is_not_this_host(self, text):
@@ -767,6 +767,27 @@ class TestSandboxEscapeSshSelf:
         ],
     )
     def test_one_glob_beside_a_literal_still_names_this_host(self, cmd):
+        assert _denied_by(cmd) == self._RULE, cmd
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # In a directory holding files named ``ssh`` and ``localhost`` (an
+            # agent can create both), the shell expands each of these into an
+            # ssh connection to this host.
+            "s?h -F /dev/null local* id",
+            "s?h local*",
+            "s?h local* id",
+            "s[s]h local* id",
+            "?sh local* id",
+            "ss* local* id",
+            "s?h -F /dev/null 127.* id",
+            "s[s]h 127.* id",
+            "?sh -F /dev/null localhos? id",
+            "s?h ::? id",
+        ],
+    )
+    def test_a_glob_host_after_a_bare_ssh_verb_glob_is_this_host(self, cmd):
         assert _denied_by(cmd) == self._RULE, cmd
 
     @pytest.mark.asyncio
