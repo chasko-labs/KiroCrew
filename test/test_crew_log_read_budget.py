@@ -248,6 +248,9 @@ _COLD_FOLD_API = frozenset(
 )
 #: The API's own modules, which define it and delegate inside it.
 _API_MODULES = frozenset({"crew_log/projection_slot_memo.py", "crew_log/projection_readers.py"})
+#: Modules whose cold-fold call runs only in their own child process (``main()``), which
+#: never marks itself as the gateway, so the read is not the gateway's.
+_CHILD_PROCESS_MODULES = frozenset({"crew_log/slot_backfill_child.py"})
 
 #: Today's callers, per file. Lower a number when a caller moves to ``cold=False`` or a
 #: child process; never raise one or add a file.
@@ -280,7 +283,7 @@ def _cold_fold_callers() -> "Counter[str]":
     found: "Counter[str]" = Counter()
     for path in sorted(SRC.rglob("*.py")):
         rel = path.relative_to(SRC).as_posix()
-        if rel in _API_MODULES or "/_vendor/" in f"/{rel}":
+        if rel in _API_MODULES or rel in _CHILD_PROCESS_MODULES or "/_vendor/" in f"/{rel}":
             continue
         source = path.read_text(encoding="utf-8")
         if not any(name in source for name in _COLD_FOLD_API):
