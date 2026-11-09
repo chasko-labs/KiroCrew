@@ -992,7 +992,12 @@ async def _turn_record_outcome(turn: _ChatTurn) -> None:
             _pending_merge_stamp = _register_consumed_merge_contexts(
                 state, turn._drained_merge_contexts
             )
+    if turn._session_note_entries and not _merge_cards_reached_the_model(turn):
+        # Unread, like the cards above, so back at the front into the seats they held.
+        slot._pending_context[:0] = turn._session_note_entries
+        turn._session_note_entries = []
     slot._inflight_merge_contexts = []
+    slot._inflight_session_notes = []
     # First: hand back the session-switch lock if this turn exited between
     # its acquire and its post-registration release. Before anything that
     # can await, and before _restore_refusal_fallback (chat_turn/model_fallback.py) takes the

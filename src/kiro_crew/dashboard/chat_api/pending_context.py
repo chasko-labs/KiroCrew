@@ -128,6 +128,16 @@ def _validate_source(source: object) -> web.Response | None:
     normalized = _normalize_source(source)
     if normalized == "":
         return None
+    # circular: session_control imports the chat API package.
+    from kiro_crew.dashboard.session_control import SESSION_NOTE_SOURCE
+
+    # The drain checks this label's entries against the admission only
+    # session_set_note attaches, so a caller's context under it would be dropped.
+    if normalized == SESSION_NOTE_SOURCE:
+        return web.json_response(
+            {"error": f"source {SESSION_NOTE_SOURCE!r} is reserved", "code": "reserved_source"},
+            status=400,
+        )
     if len(normalized) > _MAX_SOURCE_LEN:
         return web.json_response(
             {"error": f"source exceeds {_MAX_SOURCE_LEN} char limit", "code": "source_too_long"},
@@ -212,7 +222,12 @@ def _source_cap_reached(slot: _ChatSlot, source: str) -> bool:
     held = [n["context"] for n in slot._deferred_notes if n.get("context") is not None]
     pending = sum(
         1
-        for e in (*slot._pending_context, *held, *slot._inflight_merge_contexts)
+        for e in (
+            *slot._pending_context,
+            *held,
+            *slot._inflight_merge_contexts,
+            *slot._inflight_session_notes,
+        )
         if e.get("source") == source and not context_entry_expired(e, now)
     )
     return pending >= _MAX_CONTEXT_PER_SOURCE

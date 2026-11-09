@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from kiro_crew.dashboard.chat_utils import slot_history_key
 from kiro_crew.dashboard.slot_buffers import (
+    SESSION_NOTE_SOURCE,
     persistable_deferred_notes,
     serialize_deferred_notes,
     union_deferred_notes,
@@ -815,8 +816,9 @@ def build_full_line(
     # Durable copy of the held /note lines. OWNED (in SLOT_OWNED_META_KEYS),
     # so this rebuild decides the key's whole value. Plain notes retire with
     # their committed row. Merge cards retire only when their context drain
-    # records the id and this save proves their row (below). Any note dropped
-    # at a rebind seam also retires by its recorded id.
+    # records the id and this save proves their row (below). A session note
+    # retires once no queue or running turn of this slot holds its half. Any
+    # note dropped at a rebind seam also retires by its recorded id.
     # Everything else — the on-disk hold and the live hold, both read HERE,
     # under the same history lock the merge writers commit under — is kept,
     # so a /note persist that won the lock during this save's patient acquire
@@ -832,6 +834,13 @@ def build_full_line(
             if isinstance(row_note_id, str) and row_note_id:
                 window_note_ids.add(row_note_id)
     dropped_note_ids = set(slot._dropped_note_ids)
+    # Replay leaves a session note's row out, so its hold outlives that row while
+    # the slot still queues its context half or runs a turn that took it.
+    unread_note_ids = {
+        entry.get("noteId")
+        for entry in (*slot._pending_context, *slot._inflight_session_notes)
+        if entry.get("source") == SESSION_NOTE_SOURCE and entry.get("noteId")
+    }
     on_disk_hold = existing_meta.get("deferred_notes")
     surviving_hold: list[dict] = []
     for entry in _stamp_delivered_merge_cards(
@@ -842,6 +851,9 @@ def build_full_line(
         window_note_ids,
     ):
         entry_id = entry.get("id")
+        if entry_id in unread_note_ids:
+            surviving_hold.append(entry)
+            continue
         if entry_id in dropped_note_ids:
             continue
         if (

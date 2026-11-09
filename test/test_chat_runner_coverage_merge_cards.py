@@ -700,6 +700,54 @@ class TestTakeTurnContext:
         assert "merged summary" in prompt
         assert first._pending_context == []
 
+    @pytest.mark.asyncio
+    async def test_a_session_note_takes_one_seat_when_a_card_is_moved(self, tmp_path):
+        """The turn holds a session note's seat only after the drain, so a card
+        that fits beside the note is still moved onto this turn."""
+        from kiro_crew.context import ContextBuilder
+        from kiro_crew.dashboard import session_control as sc
+        from kiro_crew.memory import MemoryStore
+        from kiro_crew.skills import SkillsLoader
+
+        builder = ContextBuilder(
+            memory=MemoryStore(workspace=tmp_path / "ws"),
+            skills=SkillsLoader(skills_path=tmp_path / "skills", install_builtins=False),
+        )
+        state, client = _runner_state(tmp_path, context_builder=builder)
+        client.client = MagicMock(pop_pending_oauth_requests=MagicMock(return_value=[]))
+        first, twin, _key = self._twins_with_a_transcript(state)
+        twin._disk_meta_created_at = first._disk_meta_created_at
+        first._pending_context = [
+            self._card("merged summary", chat_runner.effective_session_key(first))
+        ]
+        twin._pending_context = [
+            {
+                "content": "note text",
+                "source": sc.SESSION_NOTE_SOURCE,
+                "admission": sc.containment_meta(state, twin),
+            },
+            *(
+                {"content": f"own {n}", "source": f"s{n}"}
+                for n in range(chat_runner._MAX_PENDING_CONTEXT - 2)
+            ),
+        ]
+        self._register(state, first, twin)
+        _set_stream(client, [LLMEvent(kind=EVENT_TEXT_CHUNK, text="ok"), _complete()])
+
+        with patch.object(
+            chat_runner, "generate_session_summary", new=AsyncMock(return_value=None)
+        ):
+            await _drive(state, twin, "first message")
+            await await_until(
+                asyncio.gather(*list(state._background_tasks), return_exceptions=True),
+                what="the moved-card background task cleanup",
+            )
+
+        prompt = client.stream.call_args_list[0].args[0]
+        assert "note text" in prompt
+        assert "merged summary" in prompt
+        assert first._pending_context == []
+
     def test_a_card_the_mover_refuses_is_not_reported_consumed(self, tmp_path):
         """The turn hands the mover every card a same-app slot holds for its session
         and lets the rule decide; a refused card stays in its holder's queue and

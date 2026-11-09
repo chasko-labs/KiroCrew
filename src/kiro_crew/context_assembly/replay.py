@@ -318,6 +318,23 @@ def is_context_cap_notice(row: dict) -> bool:
     return isinstance(meta, dict) and meta.get("notice") == CONTEXT_CAP_NOTICE
 
 
+#: The source and ``meta.appLabel`` of every ``session_set_note`` note, the label
+#: ``dashboard.session_control.SESSION_NOTE_SOURCE`` names (a test pins the two). Its context
+#: half reaches one turn only after a containment check, so no replay or recall
+#: carries its visible row: that would hand the note to a turn the check refused.
+SESSION_NOTE_SOURCE = "session_set_note"
+
+
+def is_session_note(row: dict) -> bool:
+    """Whether *row* is the visible row of a ``session_set_note`` note."""
+    meta = row.get("meta")
+    return (
+        row.get("role") == "inject"
+        and isinstance(meta, dict)
+        and meta.get("appLabel") == SESSION_NOTE_SOURCE
+    )
+
+
 def _replay_identity(row: dict) -> tuple | None:
     """Delivery identity, never a global text-equality deduplication key."""
     meta = row.get("meta")
@@ -411,6 +428,8 @@ def _quota_tail(messages: list[dict], *, conv_max: int, inject_max: int) -> list
         if _is_steer_row(m) and m["meta"].get("steerState") == _STEER_STATE_RETRACTED:
             # Taken back before the turn read it: it was never part of the
             # conversation, and its text was cleared when it was taken back.
+            continue
+        if is_session_note(m):
             continue
         if role == "inject":
             if inj >= inject_max:

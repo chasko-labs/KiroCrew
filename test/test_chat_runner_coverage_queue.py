@@ -912,6 +912,7 @@ class TestFinishQueueCycle:
             _turn_tool_calls=0,
             _turn_tool_identities=[],
             _drained_merge_contexts=[],
+            _session_note_entries=[],
             _merge_contexts_completed=False,
             _dispatch_lock_held=False,
             _auth_required=False,

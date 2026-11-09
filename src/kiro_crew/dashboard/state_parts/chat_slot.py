@@ -272,6 +272,7 @@ class _ChatSlot:
         "_ephemeral",
         "_pending_context",
         "_inflight_merge_contexts",
+        "_inflight_session_notes",
         "_deferred_notes",
         "_dropped_note_ids",
         "_app",
@@ -544,6 +545,7 @@ class _ChatSlot:
     _subagent_delivery_pending: dict[str, list[SubagentDelivery]]
     _pending_context: list[dict[str, Any]]
     _inflight_merge_contexts: list[dict[str, Any]]
+    _inflight_session_notes: list[dict[str, Any]]
     _deferred_notes: list[dict[str, Any]]
     _dropped_note_ids: set[str]
     _pending_variants: list[dict]

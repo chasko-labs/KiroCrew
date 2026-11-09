@@ -8,6 +8,7 @@ build."""
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
         effective_session_key,
         logger,
         read_session_execution,
+        sel,
         tighten_live_session_execution,
     )
     from kiro_crew.dashboard.chat_turn.queue_cycle import _MERGE_STAMP_RETRY_DELAY_SECS
@@ -597,7 +599,12 @@ def adopt_alias_note_context(
     # note's context half and each merge card a running turn took. The held ones
     # come back into this queue later, so a moved card must not take their seat.
     held_contexts = [note.get("context") for note in slot._deferred_notes]
-    for entry in (*slot._pending_context, *held_contexts, *slot._inflight_merge_contexts):
+    for entry in (
+        *slot._pending_context,
+        *held_contexts,
+        *slot._inflight_merge_contexts,
+        *slot._inflight_session_notes,
+    ):
         if isinstance(entry, dict) and not context_entry_expired(entry, now):
             queued += 1
             if source := entry.get("source"):
@@ -808,6 +815,92 @@ def take_turn_context(
     )
     consumed = _consumed_merge_contexts(state, cards) if cards else []
     return TurnContext(prefix, prefix_without_cards, consumed)
+
+
+def drop_session_notes_out_of_reach(state: Any, slot: "_ChatSlot") -> list[dict[str, Any]]:
+    """Drop each waiting ``session_set_note`` context half its target now refuses.
+
+    Each note carries the containment its writer was admitted under
+    (``admission``). If a constraint ``authorize_target`` refuses holds now that
+    the admission never saw -- a channel mirror or link gained, the session moved
+    to another workspace -- the context half goes, as a queued ``session_send``
+    message does. The transcript line stays. A note the turn keeps has its
+    admission recorded on the turn (``record_audience_admission``), so a channel
+    linked after this read withholds the reply that used it. Keyed on the source.
+    A note held across a restart keeps only its admitted workspace
+    (``slot_buffers._sanitize_restored_context``), so it is judged against the
+    all-false floor plus that workspace; a note with no admission is dropped.
+    Returns the entries kept: a verbatim retry of the turn puts them
+    back for its own drain to check again (``turn_ledgers._queue_recovery``).
+    """
+    if not slot._pending_context:
+        return []
+    # circular: session_control imports the runner's package.
+    from kiro_crew.dashboard.session_control import (
+        SESSION_NOTE_SOURCE,
+        containment_snapshot,
+        describe_containment_change,
+        newly_held_constraints,
+        record_audience_admission,
+    )
+
+    if not any(entry.get("source") == SESSION_NOTE_SOURCE for entry in slot._pending_context):
+        return []
+    now = containment_snapshot(state, slot, on_probe_failure=True)
+    read_at = time.time()
+    kept: list[dict[str, Any]] = []
+    kept_notes: list[dict[str, Any]] = []
+    held: list[str] = []
+    for entry in slot._pending_context:
+        # An expired note is discarded by the drain unread, so it admits nothing.
+        if entry.get("source") != SESSION_NOTE_SOURCE or context_entry_expired(entry, read_at):
+            kept.append(entry)
+            continue
+        admission = entry.get("admission")
+        if not isinstance(admission, dict):
+            if "admission" not in held:
+                held.append("admission")
+            continue
+        changed = newly_held_constraints(now, admission)
+        if changed:
+            held.extend(c for c in changed if c not in held)
+            continue
+        record_audience_admission(slot, admission)
+        kept_notes.append(entry)
+        kept.append(entry)
+    dropped = len(slot._pending_context) - len(kept)
+    if not dropped:
+        return kept_notes
+    slot._pending_context[:] = kept
+    change = describe_containment_change(held, mirror_unverified=bool(now.get("mirror_unverified")))
+    sel().log_api_access(
+        caller="dashboard",
+        operation="note_containment_drop",
+        outcome="denied",
+        source="session_control",
+        resources=f"slot={slot.key} dropped={dropped}",
+        error=change,
+    )
+    logger.warning("Slot %s dropped %d session note(s): %s", slot.key, dropped, change)
+    return kept_notes
+
+
+def strip_session_note_frames(text: str) -> str:
+    """*text* without its ``session_set_note`` frames.
+
+    A frame is its header, the contract line, and everything up to the first end
+    marker: the drain neutralized every frame marker inside a note's content, so
+    the first one is the frame's own.
+    """
+    # circular: session_control imports the runner's package.
+    from kiro_crew.dashboard.session_control import SESSION_NOTE_SOURCE
+
+    frame = re.compile(
+        rf'\[Background context from "{re.escape(SESSION_NOTE_SOURCE)}"\]\n'
+        rf"{re.escape(_CONTEXT_FRAME_CONTRACT)}\n.*?\[End of background context\]\n\n?",
+        re.DOTALL,
+    )
+    return frame.sub("", text)
 
 
 def _detach_appended_context(original: str, expanded: str) -> tuple[str, str]:

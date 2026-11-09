@@ -3582,7 +3582,17 @@ state a close compensates is not all scoped the same way.
   hold up to `_MAX_DURABLE_HOLD_ENTRIES` (`_MAX_PLAIN_DURABLE_HOLD_ENTRIES +
   MAX_DEFERRED_NOTES`, 30), so only merge cards may fill the third share;
   `persist_deferred_notes_sync` refuses a new hold with `DeferredHoldFull` rather
-  than evict a retained entry when either ceiling would be exceeded. One
+  than evict a retained entry when either ceiling would be exceeded. A
+  `session_set_note` note is a plain note held one step longer: replay leaves its
+  row out (`context_assembly.replay.is_session_note`), so its context half is its
+  only way to the agent. It always goes through the durable hold
+  (`deliver_note(durable=True)`), the flush stamps its half with its `noteId`, and
+  `build_full_line` keeps the entry, whatever the window or `_dropped_note_ids`
+  says, while the slot's `_pending_context` or `_inflight_session_notes` holds that
+  half; a restore queues a committed one's half again (`committed_merge_card_contexts`,
+  with no `noteTranscript`, so it is no card). It retires at the first full save
+  after a turn kept it; a turn that did not keep its prompt puts it back
+  (`_turn_record_outcome`). One
   version-skew caveat: the
   retirement invariant holds only for gateways that stamp `meta.noteId` on
   delivered rows. An older gateway carries `deferred_notes` as unowned

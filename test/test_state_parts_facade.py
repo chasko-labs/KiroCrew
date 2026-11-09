@@ -554,6 +554,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_pending_consumers": ("value", "0"),
     "_pending_context": ("value", "[]"),
     "_inflight_merge_contexts": ("value", "[]"),
+    "_inflight_session_notes": ("value", "[]"),
     "_pending_discard_conversation_key": ("value", "None"),
     "_pending_discard_from_wake": ("value", "False"),
     "_pending_memory_mode": ("value", "None"),

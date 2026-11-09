@@ -161,6 +161,8 @@ class _ChatTurn:
     # The sub-agent notices _turn_build_prompt took off the slot's queue, settled or
     # put back in _turn_settle_debts. Set in __init__ so every exit can read it.
     _drained_subagent_notices: "list[str]"
+    # The session notes this turn's prompt read, for a verbatim retry to put back.
+    _session_note_entries: "list[dict[str, Any]]"
     _empty_verdict_left_prompt_unanswered: "bool"
     _engine_fallback_walk: "EngineFallbackWalk"
     _escalation: "PoisonedConversationEscalation"

@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from kiro_crew.context_assembly.replay import SESSION_NOTE_SOURCE
 from kiro_crew.history_derivation import TRANSCRIPT_HEADER_MAX_BYTES
 from kiro_crew.history_projection import METADATA_LINE_CORRUPT, metadata_record_for_update
 from kiro_crew.jsonl_util import bounded_records
@@ -487,7 +488,11 @@ def committed_merge_card_contexts(
     notes: list[dict[str, Any]],
     transcript_key: str,
 ) -> list[dict[str, Any]]:
-    """Context halves of committed merge cards, stamped for one later drain."""
+    """Context halves of committed merge cards, stamped for one later drain.
+
+    A committed ``session_set_note`` whose hold survived has its half queued the
+    same way: the full save keeps that hold only while the half is unread.
+    """
     if not notes:
         return []
     committed = {
@@ -504,20 +509,22 @@ def committed_merge_card_contexts(
         note_id = note.get("id")
         context = note.get("context")
         session = note.get("session")
+        card = isinstance(note.get("merged_from"), dict)
         if (
             isinstance(note_id, str)
             and (note_id in committed or note.get("delivered") is True)
             and note_id not in seen
             and note.get("consumed") is not True
-            and isinstance(note.get("merged_from"), dict)
             and isinstance(context, dict)
+            and (card or context.get("source") == SESSION_NOTE_SOURCE)
             and isinstance(session, str)
             and session
         ):
             restored = dict(context)
             restored["noteSession"] = session
             restored["noteId"] = note_id
-            restored["noteTranscript"] = transcript_key
+            if card:
+                restored["noteTranscript"] = transcript_key
             contexts.append(restored)
             seen.add(note_id)
     return contexts
@@ -533,6 +540,11 @@ def _sanitize_restored_context(raw: object) -> dict[str, Any] | None:
     poison pill that re-raises at every flush seam. Rebuilt with exactly the
     known keys, so a stale ``noteSession`` stamp is discarded (the flush stamps
     the live session at delivery).
+
+    A ``session_set_note`` ``admission`` keeps only its admitted ``workspace``.
+    The gate admits such a note with every boolean constraint false, which is
+    the floor the drain assumes for a key the admission lacks, so a forged
+    ``True`` or mirror identity is never carried back to widen delivery.
     """
     if not isinstance(raw, dict):
         return None
@@ -568,6 +580,15 @@ def _sanitize_restored_context(raw: object) -> dict[str, Any] | None:
     }
     if max_age is not None:
         entry["maxAge"] = max_age
+    admission = raw.get("admission")
+    if isinstance(admission, dict):
+        # circular: session_control reaches this module through state.
+        from kiro_crew.dashboard.session_control import QUEUED_CONTAINMENT_META_KEY
+
+        recorded = admission.get(QUEUED_CONTAINMENT_META_KEY)
+        workspace = recorded.get("workspace") if isinstance(recorded, dict) else None
+        if isinstance(workspace, str) and 0 < len(workspace) <= MAX_DEFERRED_NOTE_SESSION_CHARS:
+            entry["admission"] = {QUEUED_CONTAINMENT_META_KEY: {"workspace": workspace}}
     return entry
 
 
@@ -1240,6 +1261,8 @@ class SlotBufferCoordinator:
                 context = note.pop("context", None)
                 if context is not None:
                     context["noteSession"] = live_session
+                    if has_id and context.get("source") == SESSION_NOTE_SOURCE:
+                        context["noteId"] = note_id
                     if not slot.append_pending_context(context):
                         logger.warning(
                             "Slot %s dropped a held note's context: "
@@ -1315,6 +1338,9 @@ class SlotBufferCoordinator:
                 if isinstance(merged_from, dict) and isinstance(note_id, str) and note_id:
                     context["noteId"] = note_id
                     context["noteTranscript"] = slot_history_key(slot)
+                elif has_id and context.get("source") == SESSION_NOTE_SOURCE:
+                    # The full save keeps this note's hold while the half is unread.
+                    context["noteId"] = note_id
             seat_rollback: list[dict[str, Any]] | None = None
             if queues_context and isinstance(merged_from, dict):
                 # A merge card is nothing to its agent without its context, so it

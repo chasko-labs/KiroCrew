@@ -889,6 +889,28 @@ class TestNoteEndpoint:
             assert resp.status == 200
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("route", ["note", "context"])
+    async def test_session_note_source_is_reserved(self, tmp_path: Path, route: str):
+        """The drain drops a ``session_set_note`` entry that lacks its admission, so
+        a caller's context under that label would be accepted and never read."""
+        state = _make_state(tmp_path)
+        slot = _ChatSlot("s1")
+        state._slots["s1"] = slot
+        app = web.Application()
+        app["state"] = state
+        app.router.add_post("/api/chat/slots/{slot}/note", api_chat_slot_note)
+        app.router.add_post("/api/chat/slots/{slot}/context", api_chat_slot_context)
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                f"/api/chat/slots/s1/{route}",
+                json={"content": "x", "source": " session_set_note "},
+            )
+            assert resp.status == 400
+            assert (await resp.json())["code"] == "reserved_source"
+        assert slot._pending_context == []
+
+    @pytest.mark.asyncio
     async def test_note_bad_max_age_rejected_even_when_context_false(self, tmp_path: Path):
         """maxAge is validated unconditionally -- a visible-only note
         (context=false) with a malformed maxAge is still a 400, not a silent 200."""

@@ -456,6 +456,7 @@ def init_turns_fields(self: _ChatSlot) -> None:
     self._subagent_delivery_pending = {}
     self._pending_context = []
     self._inflight_merge_contexts = []
+    self._inflight_session_notes = []
     self._deferred_notes = []
     # Note ids whose remaining delivery obligation ended without a row-based
     # retirement: rebind drops and committed plain notes restored from disk.
@@ -632,10 +633,11 @@ def has_pending_context_seat(self: _ChatSlot) -> bool:
     """True if one more entry fits the queue's seat ceiling.
 
     Counts live entries, each held note's context half, and each merge-card
-    context a running turn has taken (``_inflight_merge_contexts``), because the
-    deferred-note flush promotes that half into this same queue and a turn that
-    does not land puts its merge cards back at the front -- without the
-    reservation a later arrival takes a seat one of them needs.
+    context and session note a running turn has taken (``_inflight_merge_contexts``,
+    ``_inflight_session_notes``), because the deferred-note flush promotes that
+    half into this same queue and a turn that does not land puts its merge cards,
+    and a retry its notes, back at the front -- without the reservation a later
+    arrival takes a seat one of them needs.
     """
     now = time.time()
     seats = sum(1 for e in self._pending_context if not context_entry_expired(e, now))
@@ -644,7 +646,9 @@ def has_pending_context_seat(self: _ChatSlot) -> bool:
         if isinstance(ctx, dict) and not context_entry_expired(ctx, now):
             seats += 1
     seats += sum(
-        1 for entry in self._inflight_merge_contexts if not context_entry_expired(entry, now)
+        1
+        for entry in (*self._inflight_merge_contexts, *self._inflight_session_notes)
+        if not context_entry_expired(entry, now)
     )
     return seats + 1 <= _MAX_PENDING_CONTEXT
 

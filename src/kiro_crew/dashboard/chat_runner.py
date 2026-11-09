@@ -1021,6 +1021,7 @@ async def _run_chat(
     # every other exit returns it to the draining slot from ``_turn_record_outcome``
     # (chat_turn/queue_cycle.py), the first phase of the finally below.
     turn._drained_merge_contexts = []
+    turn._session_note_entries = []
     turn._merge_contexts_completed = False
     # Whether this turn lands, decided after the stream by _turn_ending_chain;
     # bound here so the finally reads a defined value on every exit, including

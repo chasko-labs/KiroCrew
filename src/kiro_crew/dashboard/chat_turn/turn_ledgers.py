@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     )
     from kiro_crew.dashboard.chat_turn.recovery import _session_stop_generation_for
     from kiro_crew.dashboard.chat_turn.regenerate_swap import carry_regenerate_target
+    from kiro_crew.dashboard.chat_turn.turn_context import strip_session_note_frames
     from kiro_crew.dashboard.session_directive_apply import DirectiveOutcome
 
 
@@ -157,6 +158,21 @@ def _queue_recovery(
     # A caller's extra meta can be the handed row's whole meta, so its
     # addresses are dropped here: the comparison below is their one writer.
     _recovery_meta.update((k, v) for k, v in (extra_meta or {}).items() if k not in _address_keys)
+    # Decided before the note frames leave the content, which the turn's own
+    # message still carries.
+    _replays_this_turn = content in (turn.message, turn._message_without_merge_cards)
+    _without_notes = strip_session_note_frames(content)
+    if _without_notes != content:
+        # A session note was admitted under its own containment, not this stamp's:
+        # the replay leaves its frame out and the note goes back on the queue with
+        # its admission, so the retry's drain checks it again before reading it.
+        content = _without_notes
+        # Their seats were held while the turn ran, so putting them back at the
+        # front, as a turn that does not land puts its merge cards back, evicts
+        # nothing.
+        slot._pending_context[:0] = [dict(entry) for entry in turn._session_note_entries]
+        turn._session_note_entries = []
+        slot._inflight_session_notes = []
     if isinstance(_current_message, dict) and content == _current_message.get("content"):
         _row_meta = _current_message.get("meta")
         if isinstance(_row_meta, dict):
@@ -215,7 +231,6 @@ def _queue_recovery(
     # the channels admission judges it by. A restriction only, so it is kept
     # even on a turn whose channel-origin flag a restart removed.
     stamp_source_channels(slot, _recovery_qid, getattr(turn, "_directive_source_channels", ()))
-    _replays_this_turn = content in (turn.message, turn._message_without_merge_cards)
     if _replays_this_turn and _turn_is_completion:
         # A verbatim requeue still replays the completion; runner-written
         # text queued after it (a continuation, a retry prompt) does not.
