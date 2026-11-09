@@ -419,6 +419,28 @@ bounces the keeper on the OS resume event. It stops, always, when stdin
 closes, so the forward cannot outlive the app. Windows is not offered, for the same
 reason the ssh transport above is not.
 
+**Remote Crew panes through the desktop keeper.** In that mode the dashboard is the
+remote gateway, and each pane it frames loads `http://localhost:<local_port>/`, where
+`<local_port>` is the forward the remote gateway opened on ITS OWN machine (above).
+Every `connected` check runs there too, so without more the pane times out on the
+laptop and Retry only moves it to another port the laptop lacks as well. The keeper
+therefore also holds pane forwards: a `forward <port>` line on its stdin starts
+`127.0.0.1:<port> -> <crew host>:<port>` with the same supervisor and backoff
+(`PaneForwards`), `drop <port>` tears it down, and each reports
+`tunnel: pane <port> connected`, `... down (...); retrying in Ns` or
+`... refused (...)` on stdout. The dashboard's own port, a port outside 1..65535
+and a request past `MAX_PANE_FORWARDS` (32) are refused. The app asks for the union of
+the warm pane ports its windows on the launch port show
+(`window.remoteCrewPaneAPI.forwardPorts`, admitted only from a top frame on that
+port's dashboard origin), drops a port no window shows any more, and asks every
+keeper it starts, a replacement or the first one after the crew opts in, for every
+port still shown. `InstancesViewport` mounts a
+pane's frame, and arms its load watchdog, only once its forward has been tried
+(`lib/paneForward.ts`); a forward that is refused or never comes up within
+`PANE_FORWARD_WAIT_MS` (20s) loads anyway, so the watchdog and the port probe explain
+it as before. A browser over a hand-run `ssh -L` gets no such help: the pane's
+unreachable-port panel names the ports to forward.
+
 ---
 
 ## 5. Configuration
