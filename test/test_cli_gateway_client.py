@@ -806,8 +806,23 @@ class TestCliLoopbackAddress:
         # so this stays a real check rather than passing on an empty search.
         body = inspect.getsource(cli_server._emit_session_urls)
         assert "resolve_dashboard_host(local_only=True)" in body
-        assert 'print(f"http://{host}:{port}?token={token}")' in body
+        assert 'print(f"http://{host}:{port}{base}?token={token}")' in body
+        assert 'print(f"{origin}{base}/?token={token}")' in body
         assert "_emit_session_urls(" in inspect.getsource(cli_server._token)
+
+    def test_printed_browser_url_carries_the_base_path(self, capsys):
+        """Under KIROCREW_BASE_PATH every printed URL lands on the mounted
+        tree — a root URL would 404 (see test_dashboard_base_path)."""
+        from unittest.mock import patch
+
+        from kiro_crew import cli_server
+
+        with patch.object(
+            cli_server.KiroCrewConfig, "load", return_value=cli_server.KiroCrewConfig()
+        ):
+            cli_server._emit_session_urls(6777, "tok", "/crew")
+        out = capsys.readouterr().out
+        assert "http://localhost:6777/crew?token=tok" in out
 
 
 class TestSpawnCliAuth:

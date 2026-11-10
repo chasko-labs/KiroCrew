@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -36,6 +37,7 @@ from kiro_crew.dashboard.tailnet import (
     tailnet_origin,
 )
 from kiro_crew.dashboard.token_auth import parse_duration
+from kiro_crew.dashboard.urls import resolve_base_path
 from kiro_crew.loopback_http import loopback_urlopen
 from kiro_crew.port_resolution import resolve_client_port
 from kiro_crew.preflight import run_preflight_checks
@@ -51,7 +53,8 @@ def _probe_dashboard_health(port: int) -> None:
     dashboard. Network errors are silently ignored.
     """
     try:
-        req = urllib.request.Request(f"http://{_CLI_LOOPBACK}:{port}/", method="GET")
+        base = resolve_base_path(os.environ.get("KIROCREW_BASE_PATH"))
+        req = urllib.request.Request(f"http://{_CLI_LOOPBACK}:{port}{base}/", method="GET")
         with loopback_urlopen(req, timeout=2) as resp:  # nosemgrep
             body = resp.read(8192).decode("utf-8", errors="replace")
             if DASHBOARD_HTML_NOT_FOUND_MARKER.lower() in body.lower():
@@ -172,7 +175,8 @@ def _token(args: argparse.Namespace) -> None:
     # unprovable peer is refused (fail closed) rather than sent to. So no pre-
     # send gate is needed here; the live connected-peer verdict is the single
     # authority.
-    url = f"http://{_CLI_LOOPBACK}:{port}/api/token/local?ttl={args.ttl}"
+    base = resolve_base_path(os.environ.get("KIROCREW_BASE_PATH"))
+    url = f"http://{_CLI_LOOPBACK}:{port}{base}/api/token/local?ttl={args.ttl}"
     epp = getattr(args, "embed_parent_port", None)
     if epp:
         url += f"&embed_parent_port={int(epp)}"
@@ -227,15 +231,17 @@ def _token(args: argparse.Namespace) -> None:
         sys.exit(1)
     _probe_dashboard_health(port)
 
-    _emit_session_urls(port, token)
+    _emit_session_urls(port, token, base)
 
 
-def _emit_session_urls(port: int, token: str) -> None:
+def _emit_session_urls(port: int, token: str, base: str = "") -> None:
     """Print every origin the operator can open this session on.
 
     Extracted from ``_token`` so the URL set is testable without standing up a
     gateway and minting a real session: the interesting behaviour is which origins
     get a line, and that is pure given the config and the Tailscale lookup.
+    ``base`` is the ``KIROCREW_BASE_PATH`` prefix (``""`` at the root): every
+    printed URL carries it, or the browser lands on an unserved root.
     """
     # Print the SAME canonical loopback host the gateway uses for its auto-open
     # and !dashboard links. resolve_dashboard_host() returns "localhost" for the
@@ -245,12 +251,12 @@ def _emit_session_urls(port: int, token: str) -> None:
     # origin, splitting the SPA's per-origin localStorage so all dashboard
     # settings appear reset. Keeping the host consistent avoids that.
     host = resolve_dashboard_host(local_only=True)
-    print(f"http://{host}:{port}?token={token}")
+    print(f"http://{host}:{port}{base}?token={token}")
     cfg = KiroCrewConfig.load()
     origin = dashboard_origin(cfg.dashboard.url)
     if origin and "localhost" not in origin:
         print()
-        print(f"{origin}/?token={token}")
+        print(f"{origin}{base}/?token={token}")
 
     # The tailnet origin, when one is trusted. Without this the flow dead-ends: the
     # gateway derives `https://<MagicDNS name>` itself precisely so the operator does

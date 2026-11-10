@@ -350,7 +350,11 @@ def _is_spa_shell_request(request: web.Request) -> bool:
     """
     if request.method not in ("GET", "HEAD"):
         return False
+    # Same sub-path rule as the token flow: compare the app-relative path.
     path = request.path
+    base_path = str(request.config_dict.get("base_path", "") or "")
+    if base_path and (path == base_path or path.startswith(base_path + "/")):
+        path = path[len(base_path) :] or "/"
     # Fast-path: most paths don't start with /apps/
     if not path.startswith("/apps/"):
         if path in _APP_WINDOW_EXCLUDED_PATHS:

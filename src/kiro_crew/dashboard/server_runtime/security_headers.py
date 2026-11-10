@@ -291,7 +291,14 @@ async def _finalize_asset_cache_control(request: web.Request, response: web.Stre
     """
     if response.status in (200, 206, 304):
         return
-    if not request.path.startswith(_IMMUTABLE_PATH_PREFIXES):
+    # App-relative path under a base-path mount (see the base_path flag in
+    # start_dashboard; identity when unset). Inline stdlib-only: owner
+    # modules keep module-level imports to stdlib/third-party.
+    _asset_path = request.path
+    _asset_base = str(request.config_dict.get("base_path", "") or "")
+    if _asset_base and (_asset_path == _asset_base or _asset_path.startswith(_asset_base + "/")):
+        _asset_path = _asset_path[len(_asset_base) :] or "/"
+    if not _asset_path.startswith(_IMMUTABLE_PATH_PREFIXES):
         return
     if response.headers.get("Cache-Control") not in (
         _IMMUTABLE_CACHE_CONTROL,

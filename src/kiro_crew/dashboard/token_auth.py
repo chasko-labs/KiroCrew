@@ -346,7 +346,16 @@ def token_auth_middleware(
         return await _token_flow(request, handler)
 
     async def _token_flow(request: web.Request, handler: object) -> web.StreamResponse:
+        # Middleware sees the full path, but under a base-path mount the
+        # route table matched the app-relative one: every path set below
+        # compares the relative form (see the base_path flag in
+        # start_dashboard; identity when unset).
         path = request.path
+        # str(): mocked config_dicts in tests return a MagicMock here; its
+        # repr never prefixes a real path, so this stays stock there.
+        base_path = str(request.config_dict.get("base_path", "") or "")
+        if base_path and (path == base_path or path.startswith(base_path + "/")):
+            path = path[len(base_path) :] or "/"
 
         # A relay-delivered request (``dashboard/kiro_relay``): the relay is its
         # authentication, so the person it named is admitted (or refused) here,

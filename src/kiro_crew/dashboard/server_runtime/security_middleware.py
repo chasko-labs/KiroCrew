@@ -285,7 +285,16 @@ def _make_host_validation_middleware(caller: str) -> Callable:
         request: web.Request,
         handler: object,
     ) -> web.StreamResponse:
-        if request.path not in PROBE_PATHS and not check_host(request):
+        # App-relative path under a base-path mount (see the base_path flag
+        # in start_dashboard; identity when unset). Inline stdlib-only: owner
+        # modules keep module-level imports to stdlib/third-party.
+        _probe_path = request.path
+        _probe_base = str(request.config_dict.get("base_path", "") or "")
+        if _probe_base and (
+            _probe_path == _probe_base or _probe_path.startswith(_probe_base + "/")
+        ):
+            _probe_path = _probe_path[len(_probe_base) :] or "/"
+        if _probe_path not in PROBE_PATHS and not check_host(request):
             # SEL audit (security-relevant permission decision): make
             # DNS-rebinding attempts visible in the audit log, mirroring the
             # API-access audit.
@@ -338,8 +347,13 @@ def _make_csrf_middleware(caller: str) -> Callable:
         request: web.Request,
         handler: object,
     ) -> web.StreamResponse:
+        # App-relative path, same rule as the Host barrier above.
+        _csrf_path = request.path
+        _csrf_base = str(request.config_dict.get("base_path", "") or "")
+        if _csrf_base and (_csrf_path == _csrf_base or _csrf_path.startswith(_csrf_base + "/")):
+            _csrf_path = _csrf_path[len(_csrf_base) :] or "/"
         guarded = request.method not in _CSRF_SAFE_METHODS and not is_csrf_exempt(
-            request.path, request.method
+            _csrf_path, request.method
         )
         if guarded and not check_origin(request, require=True, fallback_header="Referer"):
             await _audit_denied(

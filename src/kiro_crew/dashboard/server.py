@@ -1299,6 +1299,13 @@ async def start_dashboard(
             # its asset URLs will miss these routes.
             root = web.Application()
             root.add_subapp(base_path, app)
+            # aiohttp routes the stripped path but middleware still sees the
+            # full one: every path-set comparison (token bypasses, CSRF
+            # exemptions, probe paths, immutable-asset prefixes, SPA-shell
+            # detection) reads this flag via request.config_dict and compares
+            # the app-relative path. Set only on the mounted tree, so the
+            # stock root mount and the headless API server keep the identity.
+            app["base_path"] = base_path
             logger.info("Serving dashboard under base path %s", base_path)
             runner = build_hardened_runner(root, max_field_size=_MAX_HEADER_FIELD_SIZE)
         else:
