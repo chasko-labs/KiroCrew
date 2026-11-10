@@ -65,6 +65,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_DEEPSEEK,
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -103,6 +104,12 @@ class AcpClient:
     # Written by the claude adapter at launch, read back by the settings writer
     # through ``getattr`` with an empty default: never set on any other host.
     _claude_adapter_disk_version: str
+    # Written by the muse adapter at launch, read by diagnostics and the
+    # install probe through ``getattr`` with an empty default: never set on any
+    # other host. This session's stdio->HTTP MCP relays, started on the spawn
+    # path and stopped once the session ends.
+    _muse_adapter_disk_version: str
+    _muse_relays: list
     # Fields first set by a member an owner module defines, declared so the class names them.
     _claude_shipped_restrictions: frozenset[tuple[str, str]]
     _entitlement_probe_inflight: asyncio.Future[tuple[list[dict[str, str]], float]] | None
@@ -371,6 +378,9 @@ class AcpClient:
         # The launch MCP config file this spawn wrote, removed once the session
         # exists (``acp.harness.copilot``, ``acp.harness.strands``).
         self._copilot_mcp_config_path = ""
+        # This session's MCP relays (muse backend): started on the spawn path
+        # (``acp.harness.muse``), stopped once the session ends.
+        self._muse_relays = []
         # Length of the notification buffer when the routing write answered: the
         # config reports below it were superseded by that answer.
         self._routing_answer_floor = 0
@@ -870,6 +880,9 @@ class AcpClient:
     _deepseek_session_mcp_servers = _client_mcp_array._deepseek_session_mcp_servers
     _copilot_session_mcp_servers = _client_mcp_array._copilot_session_mcp_servers
     _pi_session_mcp_servers = _client_mcp_array._pi_session_mcp_servers
+    _muse_session_mcp_servers = _client_mcp_array._muse_session_mcp_servers
+    _start_muse_relays = _client_mcp_array._start_muse_relays
+    _discard_muse_relays = _client_mcp_array._discard_muse_relays
     _republish_pi_mcp_handoff = _client_mcp_array._republish_pi_mcp_handoff
     _discard_pi_mcp_handoff = _client_mcp_array._discard_pi_mcp_handoff
     _discard_copilot_mcp_config = _client_mcp_array._discard_copilot_mcp_config
@@ -942,6 +955,10 @@ class AcpClient:
     @property
     def _is_pi(self) -> bool:
         return self.backend == ACP_BACKEND_PI
+
+    @property
+    def _is_muse(self) -> bool:
+        return self.backend == ACP_BACKEND_MUSE
 
     @property
     def _is_goose(self) -> bool:

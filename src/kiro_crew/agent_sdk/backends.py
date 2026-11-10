@@ -401,6 +401,17 @@ ACP_BACKEND_DEEPSEEK = "deepseek"
 # (``test/fixtures/acp_frames/copilot/``). Its ``allow_all`` option and its
 # ``session/request_permission`` per tool call are wire facts of that release.
 ACP_BACKEND_COPILOT = "copilot"
+# Muse: Meta's Muse Code reached through the community npm adapter,
+# ``muse-code-acp``. TWO components, the pi/claude shape: the adapter is the ACP
+# server Crew spawns and the agent is the ``muse`` binary the adapter drives
+# (``MUSE_CODE_EXECUTABLE``). There is no ``muse acp`` subcommand. The adapter
+# asks per approval itself -- host-offered ACP choices, fail-closed on cancel or
+# stale replies -- so Crew loads no gate into it; see :data:`Routing.AGENT_SPEC`.
+#
+# VERIFIED RANGE: adapter 0.11.0, host Muse Code 1.4.14
+# (``test/fixtures/acp_frames/muse/``). The adapter's README names Node >= 22
+# and a separately installed, logged-in ``muse`` (browser login or META_API_KEY).
+ACP_BACKEND_MUSE = "muse"
 # Strands: the official Strands CLI (``@strands-agents/cli``) serving a Strands Python
 # project over ACP (``strands --agent <project> --acp-server``). One component to
 # install, a Node floor (the CLI's own ``engines.node``) and a Python environment for
@@ -457,6 +468,7 @@ ACP_BACKENDS_KNOWN: FrozenSet[str] = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -474,6 +486,7 @@ ACP_BACKENDS_INDEPENDENT_SETUP: FrozenSet[str] = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -602,6 +615,7 @@ BASELINE_SELECTABLE_BACKENDS: FrozenSet[str] = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -629,6 +643,7 @@ POLICY_ID_BY_BACKEND: dict = {
     ACP_BACKEND_GOOSE: ACP_BACKEND_GOOSE,
     ACP_BACKEND_DEEPSEEK: ACP_BACKEND_DEEPSEEK,
     ACP_BACKEND_COPILOT: ACP_BACKEND_COPILOT,
+    ACP_BACKEND_MUSE: ACP_BACKEND_MUSE,
 }
 
 #: The backend a deployment policy may never deny.

@@ -27,6 +27,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -71,6 +72,11 @@ def _pi(name: str) -> NativeAllowStore:
     return NativeAllowStore(f".pi/agent/{name}", (("PI_CODING_AGENT_DIR", name),))
 
 
+def _muse(name: str) -> NativeAllowStore:
+    # No relocation variable is documented for Muse: the store moves with $HOME.
+    return NativeAllowStore(f".muse/{name}", ())
+
+
 NATIVE_ALLOW_STORES: Mapping[str, tuple[NativeAllowStore, ...]] = {
     ACP_BACKEND_CLAUDE: (_claude("settings.json"), _claude("settings.local.json")),
     # permission.yaml: tools under user.always_allow run without a permission request.
@@ -83,6 +89,9 @@ NATIVE_ALLOW_STORES: Mapping[str, tuple[NativeAllowStore, ...]] = {
     ACP_BACKEND_CODEX: (NativeAllowStore(".codex/config.toml", (("CODEX_HOME", "config.toml"),)),),
     # extensions: code pi loads into its own process.
     ACP_BACKEND_PI: (_pi("settings.json"), _pi("extensions")),
+    # settings.json: its own settings; auth.json is already refused as the
+    # credential leaf (host_auth), so it is not listed again here.
+    ACP_BACKEND_MUSE: (_muse("settings.json"),),
     # Its permission settings (allowed tools and URLs, trusted folders, its own hooks)
     # live in config.json, which is already refused to the file tools for reading and
     # writing as its credential leaf (``host_auth``), so it is not listed again here.

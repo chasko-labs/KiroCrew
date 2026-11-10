@@ -27,6 +27,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
     ACP_BACKEND_STRANDS,
@@ -442,6 +443,11 @@ ACP_BACKENDS_ADVERTISED_MODEL_SELECTION = frozenset(
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,
         ACP_BACKEND_COPILOT,
+        # muse advertises its own model catalog (provider- and profile-qualified;
+        # ``/models`` refresh per the adapter README), so the picker reads this
+        # harness's namespace, not kiro-cli's. OPEN: the session/new ``models``
+        # block shape is still unmeasured on the wire.
+        ACP_BACKEND_MUSE,
     }
 )
 
@@ -583,6 +589,9 @@ _MODEL_REGISTRY_NAMESPACE_BY_BACKEND: dict = {
     ACP_BACKEND_OPENCODE: "opencode",
     # pi likewise: ``provider/model`` pairs from the operator's own models.json.
     ACP_BACKEND_PI: "pi",
+    # muse gets its own key: its ids are the Muse subscription catalog
+    # (provider- and profile-qualified), a vocabulary no other harness serves.
+    ACP_BACKEND_MUSE: "muse",
     # goose likewise, and it is the sharpest case: its ``session/new`` advertises the
     # whole provider catalog it could reach, so sharing the ``acp`` bucket would not
     # merely mix two harnesses' ids -- it would replace kiro-cli's advertised catalog

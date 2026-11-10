@@ -49,6 +49,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_PI,
     ACP_BACKEND_PROCESS_NAMES,
     ACP_BACKEND_STRANDS,
@@ -112,6 +113,11 @@ COMPONENT_CODEX_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_CODEX]
 #: ``pi`` agent that adapter spawns in turn. Either can be absent on its own.
 COMPONENT_PI_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_PI]
 COMPONENT_PI_CLI = "pi"
+#: The muse backend's TWO components: the ``muse-code-acp`` adapter Crew spawns,
+#: and the ``muse`` agent that adapter drives in turn. Either can be absent on
+#: its own, the pi/claude shape.
+COMPONENT_MUSE_ACP_ADAPTER = ACP_BACKEND_PROCESS_NAMES[ACP_BACKEND_MUSE]
+COMPONENT_MUSE_CODE_CLI = "muse"
 
 #: How long a verdict is reused. The Claude driver shells out to mise and globs
 #: the filesystem, and the dashboard polls this endpoint, so an uncached probe
@@ -473,6 +479,45 @@ def _probe_pi() -> BackendInstallState:
     )
 
 
+def _probe_muse() -> BackendInstallState:
+    """The muse backend needs BOTH components, and names the absent one.
+
+    The pi probe's shape, because the harness has the same split: the adapter
+    is what Crew spawns and the agent is what the adapter drives, and having
+    one without the other is a distinguishable half-install. The remedies
+    differ per half -- the adapter is an npm package, the agent is Meta's own
+    installer -- so each missing half is suggested on its own.
+
+    ``restart_required`` reads the spawn path's own caches for the same reason
+    the other probes do: both components resolve once per process and never
+    invalidate, so a fresh "installed" can disagree with what the next spawn
+    does.
+    """
+    adapter_present, muse_present = acp_driver.muse_components_resolve()
+
+    missing: List[str] = []
+    if not adapter_present:
+        missing.append(COMPONENT_MUSE_ACP_ADAPTER)
+    if not muse_present:
+        missing.append(COMPONENT_MUSE_CODE_CLI)
+
+    policy_id = _policy_id(ACP_BACKEND_MUSE)
+    if not missing:
+        return BackendInstallState(
+            ACP_BACKEND_MUSE,
+            policy_id,
+            INSTALLED,
+            restart_required=acp_driver.muse_cached_negative(),
+        )
+    return BackendInstallState(
+        ACP_BACKEND_MUSE,
+        policy_id,
+        MISSING,
+        tuple(missing),
+        acp_driver.muse_install_command(),
+    )
+
+
 def _probe_strands() -> BackendInstallState:
     """The Strands CLI, its verified release, and the Python environment its project runs in.
 
@@ -515,6 +560,7 @@ _PROBES: Dict[str, Callable[[], BackendInstallState]] = {
     ACP_BACKEND_CLAUDE: _probe_claude,
     ACP_BACKEND_CODEX: _probe_codex,
     ACP_BACKEND_PI: _probe_pi,
+    ACP_BACKEND_MUSE: _probe_muse,
     # Every harness that serves ACP from its own binary is probed by the one function
     # above, bound to its id. Generated from the membership rather than listed, so
     # onboarding a harness of that shape adds no row here at all -- and a harness with
@@ -690,6 +736,8 @@ def probe_backends() -> List[BackendInstallState]:
 __all__ = [
     "CACHE_TTL_SECONDS",
     "COMPONENT_CLAUDE_ACP_ADAPTER",
+    "COMPONENT_MUSE_ACP_ADAPTER",
+    "COMPONENT_MUSE_CODE_CLI",
     "COMPONENT_CLAUDE_CODE_CLI",
     "COMPONENT_KAS_BUNDLE",
     "COMPONENT_KAS_ENGINE",

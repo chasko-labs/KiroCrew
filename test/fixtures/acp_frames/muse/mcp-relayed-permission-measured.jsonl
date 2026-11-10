@@ -1,0 +1,3 @@
+{"direction": "client", "message": {"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": "/tmp", "mcpServers": [{"name": "stub", "type": "http", "url": "http://127.0.0.1:8899/mcp", "headers": []}]}}}
+{"direction": "adapter", "message": {"jsonrpc": "2.0", "id": 2, "result": {"sessionId": "SESSION", "modes": {"currentModeId": "default"}}}}
+{"direction": "adapter", "message": {"jsonrpc": "2.0", "method": "session/request_permission", "params": {"sessionId": "SESSION", "toolCall": {"toolCallId": "call_1", "title": "mcp__stub__stub_ping", "status": "pending", "rawInput": {}}, "options": []}}}

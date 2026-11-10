@@ -284,6 +284,7 @@ async def _cleanup_failed_live_spawn(self: AcpClient) -> None:
         # terms a graceful shutdown uses. In the `finally` for the same reason
         # the caller puts `_reset_state` in one: this is the last chance.
         await self._discard_claude_settings_seed()
+        await self._discard_muse_relays()
 
 
 async def _to_thread_guarding_sandbox(
@@ -991,6 +992,7 @@ async def shutdown(self: AcpClient) -> None:
         # The settle is shielded, so the disk half completes either way.
         try:
             await self._discard_claude_settings_seed()
+            await self._discard_muse_relays()
         finally:
             self._reset_state()  # untracks all PIDs (root + children)
 
