@@ -1280,7 +1280,31 @@ async def start_dashboard(
         # max_field_size is raised from aiohttp's 8190 default so the accumulated
         # shared per-port cookie jar can't 400 at the parser before a handler
         # prunes it (see refresh_tokens.foreign_port_cookies).
-        runner = build_hardened_runner(app, max_field_size=_MAX_HEADER_FIELD_SIZE)
+        # The sub-path mount reads KIROCREW_BASE_PATH — the same knob the
+        # frontend build consumes as Vite's base — so one value aligns the
+        # bundle's asset URLs with the routes below. Unset or "/" keeps
+        # today's root-mounted dashboard. Normalization lives in
+        # dashboard.urls (a contract-free URL helper module, unit-tested
+        # beside it) rather than as new server.py definitions, which the
+        # composition contract reserves to the entrypoints.
+        from kiro_crew.dashboard.urls import resolve_base_path
+
+        base_path = resolve_base_path(os.environ.get("KIROCREW_BASE_PATH"))
+        if base_path:
+            # Serve the whole dashboard (page routes, static dist, SPA
+            # fallback, API, websockets) under the base: aiohttp strips the
+            # prefix before routing into the sub-app, so every registration
+            # above is unchanged. The frontend bundle must be built with the
+            # same KIROCREW_BASE_PATH (Vite base + transport/DOM shims), or
+            # its asset URLs will miss these routes.
+            root = web.Application()
+            root.add_subapp(base_path, app)
+            logger.info("Serving dashboard under base path %s", base_path)
+            runner = build_hardened_runner(root, max_field_size=_MAX_HEADER_FIELD_SIZE)
+        else:
+            # Stock spelling kept verbatim: the composition guard reads this
+            # construct (see test_dashboard_server_composition_contract_guards).
+            runner = build_hardened_runner(app, max_field_size=_MAX_HEADER_FIELD_SIZE)
         await runner.setup()
         # Serve on the socket reserved BEFORE the app-backend boot pass (see
         # _reserve_dashboard_port above): the socket is already listening, so

@@ -251,6 +251,42 @@ def dashboard_link_origin(dashboard_url: str, tunnel_url: str = "") -> str:
     return dashboard_origin(dashboard_url or "")
 
 
+def resolve_base_path(raw: str | None) -> str:
+    """Normalize ``KIROCREW_BASE_PATH`` to ``""`` or ``"/seg[/seg...]"``.
+
+    The same knob the frontend build consumes as Vite's ``base`` (see
+    ``website/scripts/lib/basePath.mjs``), so one value aligns the bundle's
+    asset URLs with the routes the gateway mounts. ``None``/empty/``"/"``
+    means the stock root-mounted dashboard. Anything else must be plain
+    segments — ASCII alphanumerics plus ``._~-``, mirroring the frontend's
+    ``SEGMENT_RE``; a malformed value raises instead of booting a dashboard
+    that cannot load itself.
+    """
+    value = (raw or "").strip()
+    if value in ("", "/"):
+        return ""
+    if not value.startswith("/") or value.startswith("//"):
+        raise ValueError(
+            "KIROCREW_BASE_PATH must be an absolute path such as /crew, " f"got {value!r}"
+        )
+    segments = [s for s in value.split("/") if s]
+    if not segments:
+        return ""
+    for segment in segments:
+        if (
+            segment in (".", "..")
+            or not segment
+            or not all(
+                "a" <= c <= "z" or "A" <= c <= "Z" or "0" <= c <= "9" or c in "._~-"
+                for c in segment
+            )
+        ):
+            raise ValueError(
+                "KIROCREW_BASE_PATH has an invalid segment " f"{segment!r} in {value!r}"
+            )
+    return "/" + "/".join(segments)
+
+
 def tunnel_origin_if_opted_in(use_tunnel_url: bool) -> str:
     """The live tunnel URL when *use_tunnel_url* is set, otherwise ``""``.
 
