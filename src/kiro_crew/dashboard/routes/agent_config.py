@@ -16,6 +16,11 @@ from kiro_crew.dashboard.handlers.acp_backend_status import (
     api_acp_backend_recheck,
     api_acp_backend_status,
 )
+from kiro_crew.dashboard.handlers.muse_login import (
+    api_muse_login_cancel,
+    api_muse_login_start,
+    api_muse_login_status,
+)
 from kiro_crew.dashboard.handlers.agent_spec_pins import api_agent_spec_pin_write
 from kiro_crew.dashboard.handlers.gateway_footprint import api_mcp_gateway_footprint
 from kiro_crew.dashboard.handlers.mcp_custom import (
@@ -49,6 +54,12 @@ def register(app: web.Application) -> None:
     # dropped first. A POST because it mutates spawn-path state: the GET above may
     # only report the divergence, which is what ``restart_required`` is for.
     app.router.add_post("/api/acp-backends/recheck", api_acp_backend_recheck)
+    # In-product Muse subscription login (device flow): start shows the code
+    # the owner approves in their own browser, status polls it, cancel kills
+    # it. Beside the recheck because the panel offers Connect on the muse row.
+    app.router.add_post("/api/muse-login/start", api_muse_login_start)
+    app.router.add_get("/api/muse-login/status", api_muse_login_status)
+    app.router.add_post("/api/muse-login/cancel", api_muse_login_cancel)
     app.router.add_get("/api/config/kirocrew", handlers.api_kirocrew_config)
     app.router.add_put("/api/config/kirocrew", handlers.api_kirocrew_config)
     app.router.add_patch("/api/config/kirocrew", handlers.api_kirocrew_config_patch)

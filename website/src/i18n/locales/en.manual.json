@@ -10449,6 +10449,21 @@
         "search_label": "Sign out or switch Kiro account",
         "search_description": "Log out of the Kiro sign-in your agents use, or sign in with another account."
       },
+      "museLoginCard": {
+        "title": "Muse sign-in",
+        "connect": "Connect",
+        "connect_body": "Starts a sign-in on the gateway host and shows a code to approve in your browser. Your Meta account stays yours: the gateway never sees your password, only the approval.",
+        "starting": "Starting sign-in…",
+        "approve_title": "Approve in your browser",
+        "approve_body": "Open the link and confirm the code matches. The sign-in completes on its own once you approve.",
+        "open_meta_sign_in": "Open Meta sign-in",
+        "waiting_approval": "Waiting for your approval…",
+        "cancel": "Cancel",
+        "signed_in": "Muse is signed in",
+        "signed_in_body": "Agent sessions on this host now run on your Muse subscription.",
+        "sign_in_failed": "Sign-in failed",
+        "try_again": "Try again"
+      },
       "agentBackendTab": {
         "codex": "OpenAI Codex",
         "copilot": "GitHub Copilot CLI",

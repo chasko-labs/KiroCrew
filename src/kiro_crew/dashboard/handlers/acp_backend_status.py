@@ -169,7 +169,7 @@ def _row(state: Any, selectable: set) -> Dict[str, Any]:
     than holding a second, differently-shaped notion of a row -- and a field added
     to one verb cannot go missing from the other.
     """
-    from kiro_crew.acp_backends import backend_to_stored
+    from kiro_crew.acp_backends import ACP_BACKEND_MUSE, backend_to_stored
     from kiro_crew.agent_sdk import (
         INSTALLED,
         MISSING,
@@ -205,6 +205,12 @@ def _row(state: Any, selectable: set) -> Dict[str, Any]:
         "restart_required": (
             bool(state.restart_required) if state.installed == INSTALLED else False
         ),
+        # In-product connect flow the panel may offer on this row, or None.
+        # Today only Muse has one (``/api/muse-login/*``: the device flow the
+        # owner approves in their own browser). A machine id, not prose: the
+        # panel branches on it, and a gateway that predates it sends nothing
+        # (the probe type marks it optional).
+        "connect_flow": "muse-login" if state.backend == ACP_BACKEND_MUSE else None,
         # ``sign_in_remedy`` is rendered VERBATIM by the panel and is
         # deliberately untranslated. A per-harness sign-in string that went
         # through i18n would be a per-harness edit to thirteen locale files

@@ -38,7 +38,7 @@ _MAX_KNOWN_UNGATED_ROUTES = 0
 # Coherence floor: the real count of gated mutating routes. Hardcoded, since deriving
 # it from the walk would be vacuous. Lower it when removing routes; raise it to the
 # real count whenever routes are added, or the slack it prevents regrows.
-_MINIMUM_GATED_ROUTES = 59
+_MINIMUM_GATED_ROUTES = 61
 
 
 class _FakeState:

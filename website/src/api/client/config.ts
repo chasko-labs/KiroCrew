@@ -81,6 +81,13 @@ export interface AcpBackendProbe {
     signs_in_separately: boolean
   }
   /**
+   * In-product connect flow id the panel may offer on this row (`'muse-login'`
+   * on the Muse row, `null` elsewhere). OPTIONAL: a gateway that predates it
+   * sends nothing and the panel offers nothing. A machine id, never prose --
+   * the panel branches on it.
+   */
+  connect_flow?: string | null
+  /**
    * The capability card: what this harness can do, projected on the server from
    * the capability memberships it already declared
    * (`agent_sdk/backend_cards.py`). OPTIONAL, like `auth`, because a gateway
@@ -193,6 +200,21 @@ export interface AcpBackendProbe {
   }
 }
 
+/**
+ * The `/api/muse-login/*` state machine, as the wire sends it. `code`/`url`
+ * ride along only while `pending` (the panel must not keep a device grant on
+ * screen after the verdict); `detail` carries the failure reason on
+ * failed/expired, and `rejoined` says a start met an already-pending flow.
+ */
+export interface MuseLoginStatus {
+  state: 'none' | 'pending' | 'ready' | 'failed' | 'expired' | 'cancelled'
+  ok?: boolean
+  rejoined?: boolean
+  code: string
+  url: string
+  detail: string
+}
+
 export function createConfigEndpoints({ post, put, j, jfetch: fetch }: ClientTransport) {
   const settings = {
     // Agent config
@@ -232,6 +254,13 @@ export function createConfigEndpoints({ post, put, j, jfetch: fetch }: ClientTra
     // notion of a row. A POST, because it mutates spawn-path state; the GET above can
     // only report the divergence, which is what `restart_required` says.
     acpBackendRecheck: (backend: string) => post('/api/acp-backends/recheck', { backend }).then(j) as Promise<{ backend: AcpBackendProbe }>,
+    // In-product Muse subscription login (device flow the owner approves in
+    // their own browser). Start answers with the code+URL while pending;
+    // status polls it; cancel kills it. Owner-only; a stranger's call is a
+    // rejection, like every other owner route.
+    museLoginStart: () => post('/api/muse-login/start', {}).then(j) as Promise<MuseLoginStatus>,
+    museLoginStatus: () => fetch('/api/muse-login/status').then(j) as Promise<MuseLoginStatus>,
+    museLoginCancel: () => post('/api/muse-login/cancel', {}).then(j) as Promise<MuseLoginStatus>,
   }
 
   const dashboardRead = {

@@ -21,6 +21,7 @@ import { KIRO_SIGN_IN_HIGHLIGHT_ANCHOR } from '../../hooks/useSettingHighlight'
 import { i18nT } from '../../i18n/t'
 import { clearCachedModels } from '../../providers/adapters/acp'
 import { KiroSignInCard } from './KiroSignInCard'
+import { MuseLoginCard } from './MuseLoginCard'
 import { StrandsSetupCard } from './StrandsSetupCard'
 import { MCP_SERVERS_HREF } from '../connections/useConnectionsSubTab'
 import { KIRO_SIGN_IN_BACKEND, KIRO_SIGN_IN_SETTING_ID } from './kiroSignInLink'
@@ -35,6 +36,14 @@ const KIRO = ACP_BACKEND_KIRO
 const CLAUDE = 'claude'
 const KAS = ACP_BACKEND_KAS
 const STRANDS = 'strands'
+
+/**
+ * In-product connect flow ids the probe rows may carry (`connect_flow`). A
+ * protocol value like `installed`: the server owns the vocabulary and the
+ * panel only branches on it, so a new flow costs no per-harness literal --
+ * the row names it and this panel renders the card it names.
+ */
+const MUSE_LOGIN_FLOW = 'muse-login'
 
 /**
  * The agents this frontend has a translated name and an icon for.
@@ -1732,6 +1741,18 @@ export function AgentBackendTab() {
                     {value === STRANDS && (
                       <ErrorBoundary scope="developer-strands-setup" fallback={null}>
                         <StrandsSetupCard />
+                      </ErrorBoundary>
+                    )}
+                    {/* Muse subscription sign-in, inside the row whose probe
+                        names its connect flow. Server-driven like the row
+                        itself: the row carries `connect_flow`, the panel only
+                        branches on the id -- no per-harness literal. Isolated
+                        so a throwing card cannot take the switch down with it.
+                        On `ready` the row is re-taken so the verdict, not the
+                        card's word, says the harness is usable. */}
+                    {probe(value)?.connect_flow === MUSE_LOGIN_FLOW && (
+                      <ErrorBoundary scope="developer-muse-login" fallback={null}>
+                        <MuseLoginCard onConnected={() => recheckMut.mutate(value)} />
                       </ErrorBoundary>
                     )}
                     {facts(value)}

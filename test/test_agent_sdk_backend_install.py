@@ -1047,6 +1047,9 @@ class TestEndpointPayloadShape:
                 # Non-empty only on a wrong-release MISSING verdict (Copilot's pin).
                 "found_version",
                 "restart_required",
+                # The in-product connect flow id (``muse-login`` on the muse
+                # row, None elsewhere): the panel's Connect affordance.
+                "connect_flow",
                 "auth",
                 # The capability card, spread into the row rather than nested:
                 # each of these four is read on its own by the panel. What each
@@ -1099,6 +1102,9 @@ class TestEndpointPayloadShape:
             "install_command": "",
             "found_version": "",
             "restart_required": False,
+            # No connect flow on the Kiro row; the muse row pins "muse-login"
+            # in the muse-login suite, beside the flow it exercises.
+            "connect_flow": None,
             # Compared against the declaration rather than a literal copy of the
             # remedy: the string is rendered verbatim by the panel, so a literal
             # here would pin the WORDING, and every reword of the operator advice
