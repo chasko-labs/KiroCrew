@@ -695,22 +695,29 @@ AGENT_AUTH_DECLARATIONS: Tuple[AgentAuthDeclaration, ...] = (
     ),
     AgentAuthDeclaration(
         backend=ACP_BACKEND_MUSE,
-        # Verified on disk: ``~/.muse/auth.json`` exists on a signed-in host
-        # alongside approval-policy.json, settings.json and trust.json. The
-        # file's exact key layout is not read here -- only its path is fenced.
-        credential_leaves=(".muse/auth.json",),
+        # Verified on disk on a signed-in host: the credential is
+        # ``~/.config/muse/auth.json`` (launcher v3 resolves
+        # ``$MUSE_AUTH_PATH``, else ``$XDG_CONFIG_HOME/muse/auth.json``, else
+        # this path), beside approval-policy.json. ``~/.muse/`` holds only
+        # worktrees -- an earlier revision fenced ``.muse/auth.json``, which
+        # left the real file readable AND unsparen. The file's exact key
+        # layout is not read here -- only its path is fenced.
+        credential_leaves=(".config/muse/auth.json",),
         # No home-relocation variable is documented for Muse, so none is
         # declared: a wrong override would fence a file the harness never reads.
+        # (``MUSE_AUTH_PATH``/``XDG_CONFIG_HOME`` relocate the file, not the
+        # home; the login flow mirrors that resolution where it checks.)
         home_override_env_vars=(),
         # The one leaf the mask must spare: this harness is enforced, so the mask
         # denies its child the whole credential floor, and muse authenticates
         # ITSELF from this file. The read gate still refuses the same leaf to the
         # agent's file tools.
-        adapter_own_leaves=(".muse/auth.json",),
-        # Action only, no state: the harness signs in on its own.
+        adapter_own_leaves=(".config/muse/auth.json",),
+        # Action only, no state: the harness signs in on its own. No
+        # backticks: the panel renders this as plain text, so markup shows raw.
         sign_in_remedy=(
             "Muse signs in on its own \u2014 run muse in a terminal and complete "
-            "`muse login`, or set META_API_KEY for headless use. Neither is checked "
+            "muse login, or set META_API_KEY for headless use. Neither is checked "
             "here: the harness reads them."
         ),
         signed_out_message=(

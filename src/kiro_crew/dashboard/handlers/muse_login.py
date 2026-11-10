@@ -10,9 +10,10 @@ land in the browser. These routes let the owner drive that flow from the
   binary through the harness's own resolver, spawns ``muse login`` with
   piped output, and answers with the ``{code, url}`` the owner approves.
 * ``GET /api/muse-login/status`` — owner-only. ``pending`` while the
-  process waits, ``ready`` once it exits 0 with ``~/.muse/auth.json``
-  present, ``failed``/``expired`` otherwise (with a short tail of the
-  process output as the reason, never credential contents).
+  process waits, ``ready`` once it exits 0 with the launcher's credential
+  file present (see :func:`muse_auth_path`), ``failed``/``expired``
+  otherwise (with a short tail of the process output as the reason, never
+  credential contents).
 * ``POST /api/muse-login/cancel`` — owner-only. Kills a pending login.
 
 Single-flight: one login at a time per gateway process. A second start
@@ -103,8 +104,21 @@ def parse_login_output(text: str) -> tuple[str, str]:
 
 
 def muse_auth_path() -> Path:
-    """The credential file ``muse login`` writes (existence only, never read)."""
-    return Path.home() / ".muse" / "auth.json"
+    """The credential file ``muse login`` writes (existence only, never read).
+
+    Mirrors the launcher v3 resolution (``$MUSE_AUTH_PATH``, else
+    ``$XDG_CONFIG_HOME/muse/auth.json``, else ``~/.config/muse/auth.json``):
+    checking any other path would report a signed-in host as signed out.
+    """
+    import os
+
+    override = os.environ.get("MUSE_AUTH_PATH")
+    if override:
+        return Path(override)
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home) / "muse" / "auth.json"
+    return Path.home() / ".config" / "muse" / "auth.json"
 
 
 def _snapshot_locked() -> dict[str, Any]:
