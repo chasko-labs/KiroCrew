@@ -51,6 +51,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -215,6 +216,7 @@ class Driver:
     argv: list[str]
     cwd: Path
     timeout: float
+    turn_timeout: float = 420.0
     next_id: int = 0
     frames: list[dict[str, Any]] = field(default_factory=list)
     stderr_tail: list[str] = field(default_factory=list)
@@ -304,9 +306,18 @@ class Driver:
         return self._pump_until(request_id, method)
 
     def _pump_until(self, request_id: int, method: str) -> dict[str, Any]:
+        deadline = time.monotonic() + self.turn_timeout
         while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CaptureError(
+                    f"turn deadline ({self.turn_timeout:.0f}s) expired while "
+                    f"answering {method} after {len(self.frames)} frame(s): "
+                    f"{self.permission_requests} permission request(s). "
+                    f"{self._stderr_hint()}"
+                )
             try:
-                line = self._lines.get(timeout=self.timeout)
+                line = self._lines.get(timeout=min(self.timeout, remaining))
             except queue.Empty:
                 raise CaptureError(
                     f"adapter sent nothing for {self.timeout:.0f}s while answering "
@@ -594,6 +605,13 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="working directory for the probe session (created if missing)",
     )
+    parser.add_argument(
+        "--turn-timeout",
+        type=float,
+        default=420.0,
+        help="seconds for the whole model turn before giving up (partial "
+        "frames are still written)",
+    )
     args = parser.parse_args(argv)
 
     if not args.timeout >= 1.0:
@@ -619,8 +637,11 @@ def main(argv: list[str] | None = None) -> int:
     build_dir.mkdir(exist_ok=True)
     out_path = build_dir / "muse-member-dispatch.jsonl"
 
+    driver: Driver | None = None
+    stop = ""
+    code, reason = EXIT_NOT_REACHED, "drive did not finish"
     try:
-        with Driver(adapter_argv, cwd, args.timeout) as driver:
+        with Driver(adapter_argv, cwd, args.timeout, args.turn_timeout) as driver:
             try:
                 driver.initialize()
                 driver.new_session(http_element)
@@ -632,51 +653,59 @@ def main(argv: list[str] | None = None) -> int:
                 if str(exc).startswith("UNPROVEN"):
                     print(str(exc), file=sys.stderr)
                     return EXIT_UNPROVEN
-                raise
-            code, reason = measure(driver)
-            lines = normalize(driver.frames, driver.session_id, str(cwd))
-            header = {
-                "_meta": {
-                    "backend": "muse",
-                    "recorded": "live",
-                    "date": _datetime.date.today().isoformat(),
-                    "agent_version": driver.agent_version,
-                    "agent_name": driver.agent_name,
-                    "note": (
-                        "Driven over stdio by scripts/"
-                        "capture_muse_member_dispatch.py: session/new carried "
-                        "exactly one element, members."
-                        "member_dispatch_session_server('probe-member-key') "
-                        "behind mcp_http_relay (stdio is refused -32602), the "
-                        "model's session_status call raised one permission "
-                        "request (approved once; every other request "
-                        "rejected), and the server answered it (it refuses, "
-                        "as the probe key names no live session). The "
-                        "session uuid reads SESSION and the working directory "
-                        "reads ~/work; available_commands_update, "
-                        "session_info_update and agent_thought_chunk frames "
-                        "are dropped as the corpus requires."
-                    ),
-                }
-            }
-            with open(out_path, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps(header) + "\n")
-                for frame in lines:
-                    handle.write(json.dumps(frame) + "\n")
-            print(f"verdict: {'DISPATCH_REACHED' if code == 0 else 'NOT_REACHED'}")
-            print(f"reason: {reason}")
-            print(f"stop: {stop or 'none'}")
-            print(f"frames: {len(lines)}")
-            print(f"capture: {out_path}")
-            return code
+                reason = str(exc)
+                code = EXIT_NOT_REACHED
+            else:
+                code, reason = measure(driver)
     except CaptureError as exc:
-        print(f"failed: {exc}", file=sys.stderr)
-        return EXIT_NOT_REACHED
+        reason = str(exc)
+        code = EXIT_NOT_REACHED
     finally:
         try:
             relay.stop()
         except Exception:
             pass
+
+    # Partial frames are evidence too: a stuck turn's last frames say where
+    # it stuck, so the capture is written on every path that drove one.
+    if driver is not None and driver.frames:
+        lines = normalize(driver.frames, driver.session_id, str(cwd))
+        header = {
+            "_meta": {
+                "backend": "muse",
+                "recorded": "live",
+                "date": _datetime.date.today().isoformat(),
+                "agent_version": driver.agent_version,
+                "agent_name": driver.agent_name,
+                "note": (
+                    "Driven over stdio by scripts/"
+                    "capture_muse_member_dispatch.py: session/new carried "
+                    "exactly one element, members."
+                    "member_dispatch_session_server('probe-member-key') "
+                    "behind mcp_http_relay (stdio is refused -32602), the "
+                    "model's session_status call raised one permission "
+                    "request (approved once; every other request "
+                    "rejected), and the server answered it (it refuses, "
+                    "as the probe key names no live session). The "
+                    "session uuid reads SESSION and the working directory "
+                    "reads ~/work; available_commands_update, "
+                    "session_info_update and agent_thought_chunk frames "
+                    "are dropped as the corpus requires."
+                ),
+            }
+        }
+        with open(out_path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(header) + "\n")
+            for frame in lines:
+                handle.write(json.dumps(frame) + "\n")
+        print(f"frames: {len(lines)}")
+        print(f"capture: {out_path}")
+    print(f"verdict: {'DISPATCH_REACHED' if code == 0 else 'NOT_REACHED'}")
+    print(f"reason: {reason}")
+    print(f"stop: {stop or 'none'}")
+    if code != 0:
+        print(f"failed: {reason}", file=sys.stderr)
+    return code
 
 
 if __name__ == "__main__":
