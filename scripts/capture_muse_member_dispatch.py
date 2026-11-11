@@ -621,6 +621,15 @@ def _updates(frames: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
     return out
 
 
+def _norm_title(title: str) -> str:
+    """Titles with serve's normalization applied (``-`` rides as ``_``).
+
+    The adapter passes server names through, but serve namespaces tools with
+    underscores, so ``kirocrew-dashboard`` arrives as ``kirocrew_dashboard``.
+    """
+    return title.replace("-", "_")
+
+
 def _call_text(call: dict[str, Any]) -> str:
     """Title plus raw input as one searchable string.
 
@@ -628,18 +637,25 @@ def _call_text(call: dict[str, Any]) -> str:
     adapters, so the title is read off the update's own ``title`` first and
     the raw input is stringified defensively.
     """
-    bits = [str(call.get("title") or "")]
+    bits = [_norm_title(str(call.get("title") or ""))]
     try:
-        bits.append(json.dumps(call.get("rawInput")))
+        bits.append(_norm_title(json.dumps(call.get("rawInput"))))
     except (TypeError, ValueError):
-        bits.append(str(call.get("rawInput")))
+        bits.append(_norm_title(str(call.get("rawInput"))))
     return " ".join(bits)
 
 
 def measure(driver: Driver) -> tuple[int, str]:
-    """Read the membership bar off the drive: mount, call, gate, answer."""
+    """Read the membership bar off the drive: mount, call, gate, answer.
+
+    The gate half depends on the host's trust posture: an untrusted serve
+    never dials (no call at all); a trusting serve auto-settles MCP calls,
+    the KAS shape, with the server's own refusal as the backstop. Either
+    shape counts the round trip REACHED; the reason names which gate stood.
+    """
     calls = _updates(driver.frames, "tool_call")
-    server, _, tool = driver.expected_title.replace("mcp__", "").partition("__")
+    want = _norm_title(driver.expected_title).replace("mcp__", "")
+    server, _, tool = want.partition("__")
     dispatch_calls = [
         c
         for c in calls
@@ -656,18 +672,6 @@ def measure(driver: Driver) -> tuple[int, str]:
             "the model never called the dispatch tool "
             f"({len(calls)} tool_call(s), {len(permissions)} permission request(s))",
         )
-    if driver.dispatch_permission_requests != 1:
-        return (
-            EXIT_NOT_REACHED,
-            f"expected exactly one dispatch permission request, saw "
-            f"{driver.dispatch_permission_requests} "
-            f"({driver.other_rejections} other request(s) rejected)",
-        )
-    if not driver.allowed_tool:
-        return (
-            EXIT_NOT_REACHED,
-            "the dispatch call was never approved",
-        )
     completed = [
         u
         for u in _updates(driver.frames, "tool_call_update")
@@ -676,12 +680,20 @@ def measure(driver: Driver) -> tuple[int, str]:
     if not completed:
         return (
             EXIT_NOT_REACHED,
-            "the approved dispatch call never completed",
+            "the dispatch call never completed",
+        )
+    if driver.dispatch_permission_requests == 1 and driver.allowed_tool:
+        return (
+            EXIT_REACHED,
+            "one dispatch call, one permission request approved, "
+            "the call completed with the server's answer",
         )
     return (
         EXIT_REACHED,
-        "one session_status call, one permission request, "
-        "the call completed with the server's answer",
+        f"one dispatch call completed with the server's answer and no "
+        f"permission frame fired ({driver.permission_requests} request(s) "
+        f"total): the KAS shape -- trusted serve auto-settles MCP, the "
+        f"server's refusal is the backstop",
     )
 
 
@@ -728,13 +740,15 @@ def normalize(frames: list[dict[str, Any]], session_id: str, cwd: str) -> list[d
                     continue
         blob = json.dumps(frame)
         blob = redact_text(blob)
-        blob = _fold_ids(blob)
         if home and home != "~":
             blob = blob.replace(home, "~")
         if session_id:
             blob = blob.replace(session_id, "SESSION")
         if cwd:
             blob = blob.replace(cwd, "~/work")
+        # Uuid folding runs LAST: folding first would rename the session id
+        # itself and the SESSION replacement above would find nothing.
+        blob = _fold_ids(blob)
         try:
             kept.append(json.loads(blob))
         except json.JSONDecodeError:

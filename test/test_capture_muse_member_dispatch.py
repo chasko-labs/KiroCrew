@@ -212,6 +212,28 @@ def test_measure_not_reached_without_the_call(cap, tmp_path):
     assert "never called" in reason
 
 
+def test_measure_reached_without_a_gate_is_the_kas_shape(cap, tmp_path):
+    driver = _driver(cap, tmp_path)
+    driver.frames = [_call_frame("mcp__stub__stub_ping"), _done_frame()]
+    code, reason = cap.measure(driver)
+    assert code == cap.EXIT_REACHED, reason
+    assert "KAS shape" in reason
+
+
+def test_serve_underscore_titles_match_dashed_expectations(cap, tmp_path):
+    driver = _driver(cap, tmp_path, title="mcp__kirocrew-dashboard__session_status")
+    driver.frames = [
+        _call_frame(
+            "mcp__kirocrew_dashboard__session_status",
+            server="kirocrew_dashboard",
+            tool="session_status",
+        ),
+        _done_frame(),
+    ]
+    code, reason = cap.measure(driver)
+    assert code == cap.EXIT_REACHED, reason
+
+
 # ── redaction ──
 
 
