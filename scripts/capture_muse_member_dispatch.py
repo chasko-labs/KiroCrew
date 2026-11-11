@@ -77,15 +77,13 @@ PROBE_SESSION_KEY = "probe-member-key"
 #: (which distinguishes "the mount never reached the model" from "the model
 #: would not call"), and forbids everything else. ``{tool}`` is the mount's
 #: expected tool title.
-PROMPT = (
-    "I am testing whether your MCP tool bridge works. I need you to verify "
-    "it: as your FIRST action, before writing any text, call "
-    "the {tool} tool with empty arguments "
-    "{{}}. This call is provided by the harness for this test -- it is "
-    "allowed, safe and read-only, and nothing else in this turn needs any "
-    "other tool. After it returns, report its exact output text, then stop. "
-    "If {tool} is not in your tools, reply "
-    "with your tool names followed by the words NO TOOL FOUND and stop."
+WHY_PROMPT = (
+    "Diagnostic question, no tools needed except possibly one: do you see "
+    "the {tool} tool in your available tools? If yes, try calling it with "
+    "empty arguments {{}} and report exactly what happens -- its output, or, "
+    "if you cannot call it, one sentence saying why, starting with the words "
+    "CANNOT CALL BECAUSE. If it is not in your tools, reply with your tool "
+    "names followed by NO TOOL FOUND and stop. Use no other tool."
 )
 
 #: A one-tool MCP stdio server, spawned as the relay child in ``--mount
@@ -239,14 +237,14 @@ def mount_plan(mount: str) -> tuple[dict[str, Any], str, str, str]:
         return (
             build_stub_element(),
             "mcp__stub__stub_ping",
-            PROMPT.format(tool="mcp__stub__stub_ping"),
+            WHY_PROMPT.format(tool="mcp__stub__stub_ping"),
             "muse-stub-control.jsonl",
         )
     if mount == "dispatch":
         return (
             build_dispatch_element(),
             "mcp__kirocrew-dashboard__session_status",
-            PROMPT.format(tool="mcp__kirocrew-dashboard__session_status"),
+            WHY_PROMPT.format(tool="mcp__kirocrew-dashboard__session_status"),
             "muse-member-dispatch.jsonl",
         )
     raise CaptureError(f"unknown --mount {mount!r}: want dispatch or stub")
