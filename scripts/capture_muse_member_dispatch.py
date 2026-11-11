@@ -527,23 +527,26 @@ class Driver:
             )
         self.session_id = str(session_id)
 
-    def set_read_only(self) -> str:
-        """Hold the turn to read-only, the way the codex probe did.
+    def set_mode(self, mode: str) -> str:
+        """Hold the turn to *mode*.
 
-        The adapter auto-settles low-risk native ops with no permission
-        frame, so in default mode the model explores the host instead of
-        calling the mounted tool. Read-only gates native execution behind
-        permission requests this client rejects, leaving the dispatch call
-        -- approved once -- as the turn's only way forward.
+        Read-only gates native execution behind permission requests this
+        client rejects, leaving the dispatch call -- approved once -- as the
+        turn's only way forward; it is also the mode the codex probe used.
+        Default leaves native tools auto-settling, which lets the model
+        wander, but it is the mode under which the relayed stub was first
+        seen called, so it is the fallback when read-only will not act.
         """
+        if mode == "default":
+            return "default kept (no set_mode call)"
         try:
             result = self.request(
                 "session/set_mode",
-                {"sessionId": self.session_id, "modeId": "readOnly"},
+                {"sessionId": self.session_id, "modeId": mode},
             )
         except CaptureError as exc:
-            return f"readOnly refused ({exc}); driving in default mode"
-        return f"readOnly set ({json.dumps(result)[:160]})"
+            return f"{mode} refused ({exc}); driving in default mode"
+        return f"{mode} set ({json.dumps(result)[:160]})"
 
     def prompt(self, text: str) -> str:
         result = self.request(
@@ -710,6 +713,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "bar); stub mounts a one-tool server as the control for the mount "
         "path itself",
     )
+    parser.add_argument(
+        "--mode",
+        default="readOnly",
+        choices=("readOnly", "default"),
+        help="session mode for the turn: readOnly gates native execution "
+        "(the codex shape); default is the fallback the relayed stub was "
+        "first seen called under",
+    )
     return parser.parse_args(argv)
 
 
@@ -749,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 driver.initialize()
                 driver.new_session(http_element)
-                mode_note = driver.set_read_only()
+                mode_note = driver.set_mode(args.mode)
                 print(f"mode: {mode_note}")
                 stop = driver.prompt(prompt)
             except HarnessRefused as exc:
@@ -785,7 +796,8 @@ def main(argv: list[str] | None = None) -> int:
                 "agent_name": driver.agent_name,
                 "note": (
                     "Driven over stdio by scripts/"
-                    f"capture_muse_member_dispatch.py (--mount {args.mount}): "
+                    f"capture_muse_member_dispatch.py (--mount {args.mount}, "
+                    f"--mode {args.mode}): "
                     "session/new carried exactly one element behind "
                     "mcp_http_relay (stdio is refused -32602), mode "
                     "readOnly set over session/set_mode. Dispatch: members."

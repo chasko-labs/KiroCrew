@@ -259,8 +259,9 @@ def test_drive_says_reached_against_a_performing_adapter(cap, tmp_path):
         assert driver.agent_version == "9.9"
         driver.new_session({"name": "stub"})
         assert driver.session_id == "sess-1"
-        note = driver.set_read_only()
+        note = driver.set_mode("readOnly")
         assert "readOnly" in note
+        assert driver.set_mode("default").startswith("default kept")
         stop = driver.prompt("call it")
         assert stop == "end_turn"
     assert driver.allowed_tool == "mcp__stub__stub_ping"
