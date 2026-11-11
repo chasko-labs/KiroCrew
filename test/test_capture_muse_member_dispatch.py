@@ -125,6 +125,14 @@ def test_dispatch_mount_is_the_member_entry(cap):
     assert stem == "muse-member-dispatch.jsonl"
 
 
+def test_workspace_stub_mount_sends_no_array_element(cap):
+    element, title, prompt, stem = cap.mount_plan("workspace-stub")
+    assert element is None
+    assert title == "mcp__stub__stub_ping"
+    assert title in prompt
+    assert stem == "muse-workspace-stub-control.jsonl"
+
+
 # ── permission picks ──
 
 

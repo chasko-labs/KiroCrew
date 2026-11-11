@@ -237,8 +237,22 @@ def build_stub_element() -> dict[str, Any]:
     }
 
 
-def mount_plan(mount: str) -> tuple[dict[str, Any], str, str, str]:
-    """(session element, expected tool title, prompt, capture file stem)."""
+def mount_plan(mount: str) -> tuple[dict[str, Any] | None, str, str, str]:
+    """(session element or None, expected tool title, prompt, capture stem).
+
+    ``workspace-stub`` sends an EMPTY session array and mounts the stub
+    through the workspace's own ``.mcp.json`` instead: ``muse serve`` reads
+    and writes that file itself, so if the overlay-injected array is what
+    serve ignores, this control tells us apart overlay failure from a host
+    that honors no session MCP at all.
+    """
+    if mount == "workspace-stub":
+        return (
+            None,
+            "mcp__stub__stub_ping",
+            WHY_PROMPT.format(tool="mcp__stub__stub_ping"),
+            "muse-workspace-stub-control.jsonl",
+        )
     if mount == "stub":
         return (
             build_stub_element(),
@@ -253,7 +267,9 @@ def mount_plan(mount: str) -> tuple[dict[str, Any], str, str, str]:
             WHY_PROMPT.format(tool="mcp__kirocrew-dashboard__session_status"),
             "muse-member-dispatch.jsonl",
         )
-    raise CaptureError(f"unknown --mount {mount!r}: want dispatch or stub")
+    raise CaptureError(
+        f"unknown --mount {mount!r}: want dispatch, stub or workspace-stub"
+    )
 
 
 def _first_allow_option(params: Any) -> str:
@@ -531,9 +547,10 @@ class Driver:
             if info.get("name"):
                 self.agent_name = str(info["name"])
 
-    def new_session(self, element: dict[str, Any]) -> None:
+    def new_session(self, element: dict[str, Any] | None) -> None:
         result = self.request(
-            "session/new", {"cwd": str(self.cwd), "mcpServers": [element]}
+            "session/new",
+            {"cwd": str(self.cwd), "mcpServers": [] if element is None else [element]},
         )
         session_id = result.get("sessionId")
         if not session_id:
@@ -750,7 +767,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--mount",
         default="dispatch",
-        choices=("dispatch", "stub"),
+        choices=("dispatch", "stub", "workspace-stub"),
         help="dispatch mounts Crew's session-control entry (the membership "
         "bar); stub mounts a one-tool server as the control for the mount "
         "path itself",
@@ -783,27 +800,6 @@ def main(argv: list[str] | None = None) -> int:
     build_dir = REPO_ROOT / "build"
     build_dir.mkdir(exist_ok=True)
 
-    try:
-        adapter_argv = resolve_adapter_argv()
-        element, expected_title, prompt, stem = mount_plan(args.mount)
-        stub_log = ""
-        if args.mount == "stub":
-            # The relay child logs every method serve sends it, so the
-            # report can tell "serve never connected" apart from "serve
-            # connected and the model would not call".
-            stub_log = str(build_dir / "stub-requests.log")
-            try:
-                Path(stub_log).unlink()
-            except OSError:
-                pass
-            env_pairs = list(element.get("env") or [])
-            env_pairs.append({"name": "STUB_LOG", "value": stub_log})
-            element["env"] = env_pairs
-        relay, http_element = start_relay(element)
-    except CaptureError as exc:
-        print(f"environment: {exc}", file=sys.stderr)
-        return EXIT_USAGE
-
     # A FRESH directory per run, never reused: the adapter persists the
     # session's injected servers into the workspace's .mcp.json, so a reused
     # directory inherits a stale stdio entry that collides with the next
@@ -819,6 +815,51 @@ def main(argv: list[str] | None = None) -> int:
         cwd.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         print(f"environment: cannot create {cwd}: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    try:
+        adapter_argv = resolve_adapter_argv()
+        element, expected_title, prompt, stem = mount_plan(args.mount)
+        stub_log = ""
+        if args.mount in ("stub", "workspace-stub"):
+            # The relay child logs every method serve sends it, so the
+            # report can tell "serve never connected" apart from "serve
+            # connected and the model would not call".
+            stub_log = str(build_dir / "stub-requests.log")
+            try:
+                Path(stub_log).unlink()
+            except OSError:
+                pass
+            if element is None:
+                element = build_stub_element()
+            env_pairs = list(element.get("env") or [])
+            env_pairs.append({"name": "STUB_LOG", "value": stub_log})
+            element["env"] = env_pairs
+        relay, http_element = start_relay(element)
+        if args.mount == "workspace-stub":
+            # The session array stays EMPTY: the stub rides the workspace's
+            # own .mcp.json, which serve reads and writes itself.
+            (cwd / ".mcp.json").write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "stub": {
+                                "type": "http",
+                                "url": http_element["url"],
+                                "headers": {},
+                            }
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            http_element = None
+    except CaptureError as exc:
+        print(f"environment: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except OSError as exc:
+        print(f"environment: cannot write {cwd / '.mcp.json'}: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
     out_path = build_dir / stem
