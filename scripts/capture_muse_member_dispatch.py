@@ -471,7 +471,7 @@ class Driver:
         """
         try:
             result = self.request(
-                "session/setMode",
+                "session/set_mode",
                 {"sessionId": self.session_id, "modeId": "readOnly"},
             )
         except CaptureError as exc:
