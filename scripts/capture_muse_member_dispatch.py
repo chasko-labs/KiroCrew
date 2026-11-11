@@ -766,7 +766,7 @@ def main(argv: list[str] | None = None) -> int:
         stamp = _datetime.datetime.now(_datetime.timezone.utc).strftime(
             "%Y%m%d-%H%M%S"
         )
-        cwd = Path.home() / "workspaces" / f"muse-probe-{stamp}"
+        cwd = Path.home() / f"muse-probe-{stamp}"
     try:
         cwd.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
