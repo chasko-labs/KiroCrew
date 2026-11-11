@@ -225,6 +225,8 @@ class Driver:
     session_id: str = ""
     allowed_tool: str = ""
     permission_requests: int = 0
+    dispatch_permission_requests: int = 0
+    other_rejections: int = 0
 
     _lines: Any = None
     _proc: Any = None
@@ -375,6 +377,7 @@ class Driver:
             tool = params.get("toolCall") or {}
             title = str(tool.get("title") or "")
             if title == dispatch_tool_title():
+                self.dispatch_permission_requests += 1
                 option_id = _first_allow_option(params)
                 if option_id:
                     self.allowed_tool = title
@@ -395,6 +398,7 @@ class Driver:
                     "UNPROVEN: the dispatch permission frame offered no "
                     f"approvable option: {json.dumps(params)[:400]}"
                 )
+            self.other_rejections += 1
             option_id = _first_reject_option(params)
             if option_id:
                 self._send(
@@ -455,6 +459,24 @@ class Driver:
                 f"{json.dumps(result)[:400]}"
             )
         self.session_id = str(session_id)
+
+    def set_read_only(self) -> str:
+        """Hold the turn to read-only, the way the codex probe did.
+
+        The adapter auto-settles low-risk native ops with no permission
+        frame, so in default mode the model explores the host instead of
+        calling the mounted tool. Read-only gates native execution behind
+        permission requests this client rejects, leaving the dispatch call
+        -- approved once -- as the turn's only way forward.
+        """
+        try:
+            result = self.request(
+                "session/setMode",
+                {"sessionId": self.session_id, "modeId": "readOnly"},
+            )
+        except CaptureError as exc:
+            return f"readOnly refused ({exc}); driving in default mode"
+        return f"readOnly set ({json.dumps(result)[:160]})"
 
     def prompt(self, text: str) -> str:
         result = self.request(
@@ -531,11 +553,12 @@ def measure(driver: Driver) -> tuple[int, str]:
             "the model never called the dispatch tool "
             f"({len(calls)} tool_call(s), {len(permissions)} permission request(s))",
         )
-    if driver.permission_requests != 1:
+    if driver.dispatch_permission_requests != 1:
         return (
             EXIT_NOT_REACHED,
-            f"expected exactly one permission request, saw "
-            f"{driver.permission_requests}",
+            f"expected exactly one dispatch permission request, saw "
+            f"{driver.dispatch_permission_requests} "
+            f"({driver.other_rejections} other request(s) rejected)",
         )
     if not driver.allowed_tool:
         return (
@@ -645,6 +668,8 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 driver.initialize()
                 driver.new_session(http_element)
+                mode_note = driver.set_read_only()
+                print(f"mode: {mode_note}")
                 stop = driver.prompt(PROMPT)
             except HarnessRefused as exc:
                 print(f"refused: {exc}", file=sys.stderr)
@@ -682,15 +707,16 @@ def main(argv: list[str] | None = None) -> int:
                     "capture_muse_member_dispatch.py: session/new carried "
                     "exactly one element, members."
                     "member_dispatch_session_server('probe-member-key') "
-                    "behind mcp_http_relay (stdio is refused -32602), the "
-                    "model's session_status call raised one permission "
-                    "request (approved once; every other request "
-                    "rejected), and the server answered it (it refuses, "
-                    "as the probe key names no live session). The "
-                    "session uuid reads SESSION and the working directory "
-                    "reads ~/work; available_commands_update, "
-                    "session_info_update and agent_thought_chunk frames "
-                    "are dropped as the corpus requires."
+                    "behind mcp_http_relay (stdio is refused -32602), "
+                    "mode readOnly set over session/setMode, the model's "
+                    "session_status call raised one permission request "
+                    "(approved once; every other request rejected), and "
+                    "the server answered it (it refuses, as the probe key "
+                    "names no live session). The session uuid reads "
+                    "SESSION and the working directory reads ~/work; "
+                    "available_commands_update, session_info_update and "
+                    "agent_thought_chunk frames are dropped as the corpus "
+                    "requires."
                 ),
             }
         }
