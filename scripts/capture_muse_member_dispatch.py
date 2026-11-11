@@ -485,16 +485,29 @@ def _updates(frames: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
     return out
 
 
+def _call_text(call: dict[str, Any]) -> str:
+    """Title plus raw input as one searchable string.
+
+    ``tool_call`` updates carry ``content`` as a LIST of blocks on some
+    adapters, so the title is read off the update's own ``title`` first and
+    the raw input is stringified defensively.
+    """
+    bits = [str(call.get("title") or "")]
+    try:
+        bits.append(json.dumps(call.get("rawInput")))
+    except (TypeError, ValueError):
+        bits.append(str(call.get("rawInput")))
+    return " ".join(bits)
+
+
 def measure(driver: Driver) -> tuple[int, str]:
     """Read the membership bar off the drive: mount, call, gate, answer."""
     calls = _updates(driver.frames, "tool_call")
     dispatch_calls = [
         c
         for c in calls
-        if str((c.get("content") or {}).get("title") or c.get("title") or "")
-        == dispatch_tool_title()
-        or "session_status" in json.dumps(c.get("rawInput") or {})
-        or str(c.get("title") or "") == dispatch_tool_title()
+        if "session_status" in _call_text(c)
+        and "kirocrew-dashboard" in _call_text(c)
     ]
     permissions = [
         f
