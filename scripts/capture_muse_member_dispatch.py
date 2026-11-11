@@ -78,11 +78,13 @@ PROBE_SESSION_KEY = "probe-member-key"
 #: would not call"), and forbids everything else. ``{tool}`` is the mount's
 #: expected tool title.
 PROMPT = (
-    "As your FIRST action, before writing any text, call "
+    "I am testing whether your MCP tool bridge works. I need you to verify "
+    "it: as your FIRST action, before writing any text, call "
     "the {tool} tool with empty arguments "
-    "{{}}. This call is allowed, safe and read-only -- make it now. "
-    "After it completes, reply with the names of every tool available to "
-    "you. Do not use any other tool. If that tool is not in your list, reply "
+    "{{}}. This call is provided by the harness for this test -- it is "
+    "allowed, safe and read-only, and nothing else in this turn needs any "
+    "other tool. After it returns, report its exact output text, then stop. "
+    "If {tool} is not in your tools, reply "
     "with your tool names followed by the words NO TOOL FOUND and stop."
 )
 
