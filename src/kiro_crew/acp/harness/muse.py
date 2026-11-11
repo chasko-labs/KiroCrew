@@ -87,6 +87,16 @@ MUSE_CODE_INSTALL_REMEDY = (
 # Headless alternative to the browser login: the adapter process inherits its
 # environment, so a key here reaches the host with no file changes.
 MUSE_API_KEY_ENV = "META_API_KEY"
+# Trust front for member sessions. serve only dials session-mounted MCP
+# servers when it starts trusting the workspace; the wrapper adds
+# ``--trust-workspace`` to serve argv exactly when the trust flag below is
+# present, and passes every other invocation through to the raw binary named
+# alongside it. Both travel on the spawn env because the adapter spawns serve
+# itself: Crew names the wrapper as the executable and the raw binary beside
+# it, and serve inherits both.
+_ENV_MUSE_TRUST_WORKSPACE = "KIROCREW_MUSE_TRUST_WORKSPACE"
+_ENV_MUSE_REAL_BIN = "KIROCREW_MUSE_BIN"
+_MUSE_SERVE_TRUST_WRAPPER = "muse_serve_trust.sh"
 
 # Cache the PATH with the resolution result. A failed resolve is cached too, so
 # recomputing PATH at the error site could report directories that were never searched.
@@ -188,6 +198,11 @@ def _muse_adapter_installed_version(argv: list[str]) -> str:
     return ""
 
 
+def serve_trust_wrapper_path() -> Path:
+    """The trust-front wrapper beside this module, installed with the wheel."""
+    return Path(__file__).with_name(_MUSE_SERVE_TRUST_WRAPPER)
+
+
 class MuseLaunch(ProcessAdapter):
     """muse-code-acp: a Node adapter that asks per approval itself."""
 
@@ -242,6 +257,21 @@ class MuseLaunch(ProcessAdapter):
         # session/new call site instead would put a disk read on the shared
         # construction path kiro-cli also walks (harness-parity H13).
         await session._prepare_session_mcp()
+        # Trust rides the session overlay exactly when the array carries the
+        # member dispatch entry: serve only dials mounted servers for a
+        # trusting workspace, and the wrapper (see ``apply_spawn_env``) adds
+        # ``--trust-workspace`` on exactly this flag. Read off
+        # ``member_dispatch_mounted`` -- the composition's own answer -- rather
+        # than the session key, so a withhold (disabled/narrowed entry, plain
+        # chat) never runs trusted for tools it does not hold. Trust loads
+        # the workspace's skills and rules too: member sessions live in
+        # operator-owned project workspaces, and sandbox, approvals and the
+        # dashboard server's caller auth stand unchanged.
+        if getattr(session, "member_dispatch_mounted", None) is True:
+            session._extra_env = {
+                **getattr(session, "_extra_env", {}),
+                _ENV_MUSE_TRUST_WORKSPACE: "1",
+            }
         # This adapter mounts only relayed HTTP elements, so every stdio server
         # in the warmed array gets a loopback relay in front of it now. A
         # respawn starts fresh (``_start_muse_relays`` discards first), and a
@@ -279,21 +309,43 @@ class MuseLaunch(ProcessAdapter):
         await to_thread(self.apply_spawn_env, env)
 
     def apply_spawn_env(self, env: dict[str, str], *, spawned_binary: str | None = None) -> None:
-        """Point the adapter at a ``muse`` binary, unless one is named.
+        """Point the adapter at Crew's serve front, unless one is named.
 
-        The adapter drives an installed ``muse`` it does not vendor and does NOT
-        search PATH for ``muse`` itself, so it is named explicitly. Only set when
-        unset, so an operator override always wins. ``META_API_KEY`` passes
-        through untouched when the operator sets it: it is the headless
-        alternative to the browser login.
+        The front (``muse_serve_trust.sh`` beside this module) passes every
+        invocation through to the raw binary named beside it, adding
+        ``--trust-workspace`` to serve argv exactly when the session overlay
+        carries the trust flag -- which ``resolve_spawn`` sets only for
+        sessions whose array mounted the member dispatch entry. Only set when
+        unset, so an operator override always wins (and skips the front
+        outright). ``META_API_KEY`` passes through untouched when the operator
+        sets it: it is the headless alternative to the browser login.
         """
         if env.get(_ENV_MUSE_CODE_EXECUTABLE):
             return
+        ambient_pin = os.environ.get(_ENV_MUSE_CODE_EXECUTABLE)
         muse_exe, _searched = _resolve_muse_bin()
         global _muse_bin_cache  # noqa: PLW0603
         _muse_bin_cache = (muse_exe, _searched)
+        if ambient_pin:
+            # An operator pin in the ambient environment is still the
+            # operator's binary: fronting it would add trust semantics to a
+            # spawn the operator meant to own outright.
+            env[_ENV_MUSE_CODE_EXECUTABLE] = muse_exe or ambient_pin
+            return
         if muse_exe:
-            env[_ENV_MUSE_CODE_EXECUTABLE] = muse_exe
+            wrapper = serve_trust_wrapper_path()
+            if wrapper.is_file() and os.access(wrapper, os.X_OK | os.R_OK):
+                env[_ENV_MUSE_CODE_EXECUTABLE] = str(wrapper)
+                env[_ENV_MUSE_REAL_BIN] = muse_exe
+            else:
+                logger.warning(
+                    "muse serve front %s missing or not executable; spawning "
+                    "raw %s, whose member sessions run untrusted and whose "
+                    "dispatch entry rides unheard.",
+                    wrapper,
+                    MUSE_CODE_BIN,
+                )
+                env[_ENV_MUSE_CODE_EXECUTABLE] = muse_exe
         else:
             logger.warning(
                 "%s not found on PATH; the muse-code-acp adapter will "

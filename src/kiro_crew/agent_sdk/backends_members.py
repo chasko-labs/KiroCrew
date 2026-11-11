@@ -20,6 +20,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_GOOSE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_MUSE,
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
@@ -408,11 +409,25 @@ ACP_BACKENDS_MATE_WORKER_PROMPT_IN_CONTEXT = frozenset({ACP_BACKEND_CLAUDE, ACP_
 # With the member entry on ``session/new`` and the ``member_dispatch=True`` projection, the
 # model called ``@kirocrew-dashboard/session_status`` with no permission request, and the
 # server answered it (``identity_unattested``, as the probe key names no live session).
+#
+# muse is captured live on adapter 0.11.0 driving host 1.4.15:
+# ``test/fixtures/acp_frames/muse/member-dispatch-live.jsonl``. With the member entry on
+# ``session/new`` as the one relayed-http element (``mcp_http_relay``: raw stdio is refused
+# -32602) and mode readOnly, the model called ``mcp__kirocrew_dashboard__session_status``
+# with no permission request, and the server answered it (``404: Not Found`` reading the
+# session roster, as the probe key names no live session). The KAS shape, with one
+# precondition KAS does not have: serve only dials mounted servers when it starts
+# trusting the workspace (``muse serve --trust-workspace`` -- without it serve never
+# connects and the round trip is unreachable, see
+# ``test/fixtures/acp_frames/muse/member-dispatch-no-dial-measured.jsonl``). Trust loads
+# the workspace's skills and rules too, so the spawn path -- not this set -- decides
+# which sessions may run trusted; this membership only mounts the entry.
 ACP_BACKENDS_MEMBER_DISPATCH = frozenset(
     {
         ACP_BACKEND_CLAUDE,
         ACP_BACKEND_KAS,
         ACP_BACKEND_CODEX,
+        ACP_BACKEND_MUSE,
         ACP_BACKEND_OPENCODE,
         ACP_BACKEND_GOOSE,
         ACP_BACKEND_DEEPSEEK,

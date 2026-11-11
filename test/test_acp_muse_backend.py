@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -229,6 +230,93 @@ def test_apply_spawn_env_names_the_agent_but_loses_to_an_override(
     assert env["MUSE_CODE_EXECUTABLE"] == "/operator/pinned/muse"
 
 
+def test_trust_wrapper_resolves_and_is_executable():
+    wrapper = muse_mod.serve_trust_wrapper_path()
+    assert wrapper.name == "muse_serve_trust.sh"
+    assert wrapper.is_file()
+    assert os.access(wrapper, os.X_OK | os.R_OK)
+
+
+def test_apply_spawn_env_fronts_the_binary_with_the_raw_beside_it(
+    tmp_path, monkeypatch, no_ambient_muse_env
+):
+    exe = tmp_path / "muse"
+    exe.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(muse_mod, "_resolve_muse_bin", lambda: (str(exe), "test"))
+    env: dict = {}
+    MuseLaunch().apply_spawn_env(env)
+    assert env["MUSE_CODE_EXECUTABLE"] == str(muse_mod.serve_trust_wrapper_path())
+    assert env[muse_mod._ENV_MUSE_REAL_BIN] == str(exe)
+    assert muse_mod._ENV_MUSE_TRUST_WORKSPACE not in env
+
+
+def test_resolve_spawn_seeds_trust_only_for_mounted_member_sessions(
+    monkeypatch, clean_resolution, no_ambient_muse_env
+):
+    argv = ["node", "/n/muse-code-acp.js"]
+    monkeypatch.setattr(muse_mod, "_resolve_muse_acp_bin", lambda: (list(argv), "/usr/bin"))
+
+    async def _noop():
+        return None
+
+    plain = SimpleNamespace(
+        _model="",
+        _agent_version_read=True,
+        _prepare_session_mcp=_noop,
+        _start_muse_relays=_noop,
+        _extra_env={},
+    )
+    asyncio.run(MuseLaunch().resolve_spawn(SimpleNamespace(session=plain)))
+    assert muse_mod._ENV_MUSE_TRUST_WORKSPACE not in plain._extra_env
+
+    member = SimpleNamespace(
+        _model="",
+        _agent_version_read=True,
+        _prepare_session_mcp=_noop,
+        _start_muse_relays=_noop,
+        _extra_env={},
+        member_dispatch_mounted=True,
+    )
+    asyncio.run(MuseLaunch().resolve_spawn(SimpleNamespace(session=member)))
+    assert member._extra_env[muse_mod._ENV_MUSE_TRUST_WORKSPACE] == "1"
+
+
+def _run_wrapper(wrapper, args, extra_env):
+    import subprocess
+
+    return subprocess.run(
+        ["sh", str(wrapper), *args],
+        env={"PATH": "/usr/bin:/bin", **extra_env},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+
+def test_wrapper_adds_trust_to_serve_only(tmp_path):
+    wrapper = muse_mod.serve_trust_wrapper_path()
+    seen = tmp_path / "argv"
+    fake = tmp_path / "muse"
+    fake.write_text('#!/bin/sh\necho "$@" > "$MUSE_ARGV_LOG"\n')
+    fake.chmod(0o755)
+    base = {"MUSE_ARGV_LOG": str(seen), muse_mod._ENV_MUSE_REAL_BIN: str(fake)}
+
+    proc = _run_wrapper(wrapper, ["serve", "--foo"], {**base, muse_mod._ENV_MUSE_TRUST_WORKSPACE: "1"})
+    assert proc.returncode == 0
+    assert seen.read_text().split() == ["serve", "--trust-workspace", "--foo"]
+
+    proc = _run_wrapper(wrapper, ["serve", "--foo"], base)
+    assert proc.returncode == 0
+    assert seen.read_text().split() == ["serve", "--foo"]
+
+    proc = _run_wrapper(wrapper, ["--version"], {**base, muse_mod._ENV_MUSE_TRUST_WORKSPACE: "1"})
+    assert proc.returncode == 0
+    assert seen.read_text().split() == ["--version"]
+
+    proc = _run_wrapper(wrapper, ["serve"], {muse_mod._ENV_MUSE_TRUST_WORKSPACE: "1"})
+    assert proc.returncode == 2
+
+
 # ── relay composition ──
 
 
@@ -371,3 +459,43 @@ def test_no_dial_fixture_advertises_model_and_effort_options():
     effort = options["reasoningEffort"]
     assert effort["currentValue"] == "high"
     assert "ultra" in [o["value"] for o in effort["options"]]
+
+
+def _live_frames():
+    lines = (FIXTURES / "member-dispatch-live.jsonl").read_text().splitlines()
+    header = json.loads(lines[0])
+    assert header["_meta"]["backend"] == "muse"
+    assert header["_meta"]["recorded"] == "live"
+    return [json.loads(line) for line in lines[1:]]
+
+
+def test_live_fixture_is_the_kas_shaped_round_trip():
+    """The claim behind ACP_BACKENDS_MEMBER_DISPATCH gaining muse.
+
+    One session_status call on the mounted entry, no permission frame (trusted
+    serve auto-settles MCP), one completed answer carrying the server's
+    refusal. If serve stops dialing or starts gating, this goes red and the
+    drive -- not an edit -- re-measures it.
+    """
+    frames = _live_frames()
+    calls = [
+        frame
+        for frame in frames
+        if (frame.get("params") or {}).get("update", {}).get("sessionUpdate")
+        == "tool_call"
+        and "mcp__" in json.dumps(frame)
+    ]
+    assert len(calls) == 1
+    update = (calls[0].get("params") or {}).get("update") or {}
+    assert update.get("title") == "mcp__kirocrew_dashboard__session_status"
+    assert update.get("rawInput") == {}
+    for frame in frames:
+        assert frame.get("method") != "session/request_permission"
+    done = [
+        frame
+        for frame in frames
+        if (frame.get("params") or {}).get("update", {}).get("status") == "completed"
+        and "session roster" in json.dumps(frame)
+    ]
+    assert len(done) == 1
+    assert "404" in json.dumps(done[0])

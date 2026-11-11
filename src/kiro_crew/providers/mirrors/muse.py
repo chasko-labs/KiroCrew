@@ -17,17 +17,19 @@ Wire facts:
 * ``session/load`` needs the full params and fails pre-turn ("not found
   in the muse session store" — the store write happens on the first
   turn); post-turn load succeeds and echoes the mode inventory.
-* HOST 1.4.15 REGRESSION (2026-11-11,
-  ``test/fixtures/acp_frames/muse/member-dispatch-no-dial-measured.jsonl``,
-  driven by ``scripts/capture_muse_member_dispatch.py --mount stub``):
-  ``session/new`` still ACCEPTS the relayed ``{name, type: http, url,
-  headers: []}`` element, but ``muse serve`` never dials it -- the relay
-  child logged zero MCP methods across the settle wait and the whole turn
-  (STUB_LOG), the model listed native tools only ("NO TOOL FOUND"), no
-  ``session/request_permission`` fired. Member_thread_tools therefore stays
-  unclaimed: the H6 round trip (mount, call, gate, answer) cannot complete
-  while serve does not connect. Re-run the drive after a host or adapter
-  change before claiming anything on this path.
+* HOST TRUST GATE (2026-11-11, ``muse serve --trust-workspace``): serve only
+  dials mounted MCP servers when it starts trusting the workspace. Without
+  trust, ``session/new`` still ACCEPTS the relayed ``{name, type: http, url,
+  headers: []}`` element but serve never connects -- the relay child logged
+  zero MCP methods across the settle wait and the whole turn (STUB_LOG), the
+  model listed native tools only ("NO TOOL FOUND"), no
+  ``session/request_permission`` fired
+  (``test/fixtures/acp_frames/muse/member-dispatch-no-dial-measured.jsonl``,
+  KAS-shaped miss pinned as a guard). WITH trust, the same drive completes:
+  the model calls the mounted tool and the server answers
+  (``test/fixtures/acp_frames/muse/member-dispatch-live.jsonl``). Trust also
+  loads the workspace's skills and rules, so the spawn path -- not the
+  adapter's overlay -- decides which sessions may run trusted.
 * Modes: ``default`` ("On request" — approvals offered through ACP
   permission requests unless the native policy settles them),
   ``readOnly``, ``plan``, ``bypassApprovals`` (auto-approve — NEVER
@@ -85,10 +87,10 @@ class MuseCodeMirror(AgentConfigMirror):
                 "stdio servers travel through kiro_crew.mcp_http_relay as "
                 "{name, type: http, url, headers: []} (measured on host "
                 "1.4.14: raw stdio refused -32602; relayed stub listed, "
-                "called, permission-gated). REGRESSED on host 1.4.15 "
-                "(2026-11-11): session/new still accepts the element but "
-                "serve never dials it -- see the module docstring. HTTP "
-                "servers pass through unchanged.",
+                "called, permission-gated; measured on host 1.4.15: the "
+                "element is still accepted, and serve dials it once started "
+                "trusting the workspace -- member-dispatch-live.jsonl). "
+                "HTTP servers pass through unchanged.",
             ),
             Concern.TOOL_ALLOWLIST: Ruling(
                 Disposition.DELIVERED,
