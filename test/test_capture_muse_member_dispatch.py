@@ -252,6 +252,40 @@ def test_normalize_drops_inventories_and_neutralizes_host(cap, tmp_path):
     assert "~/work" in blob
 
 
+def test_normalize_folds_uuids_to_joinable_call_names(cap, tmp_path):
+    frames = [
+        {
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "01a1cb9a-e1df-7ae3-bcd6-978626e14473",
+                    "title": "t",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s",
+                "update": {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "01a1cb9a-e1df-7ae3-bcd6-978626e14473",
+                    "status": "completed",
+                },
+            },
+        },
+    ]
+    lines = cap.normalize(frames, "s", str(tmp_path))
+    blob = json.dumps(lines)
+    assert "01a1cb9a" not in blob
+    assert lines[0]["params"]["update"]["toolCallId"] == "CALL-1"
+    assert lines[1]["params"]["update"]["toolCallId"] == "CALL-1"
+
+
 # ── the drive, against a fake ──
 
 

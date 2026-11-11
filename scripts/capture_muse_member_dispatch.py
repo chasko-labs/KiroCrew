@@ -669,8 +669,33 @@ def measure(driver: Driver) -> tuple[int, str]:
 
 
 def normalize(frames: list[dict[str, Any]], session_id: str, cwd: str) -> list[dict]:
-    """Corpus-ready lines: scrubbed, host-neutral, small."""
+    """Corpus-ready lines: scrubbed, host-neutral, small.
+
+    Run and request uuids are mapped to CALL-<n> in order of first
+    appearance: the corpus refuses them
+    (``scripts/check_acp_frame_host_data.py``), and the mapping keeps
+    tool_call/tool_call_update pairs joinable. The mapping happens here, at
+    capture time -- never by editing a committed frame.
+    """
+    import re
+
     from kiro_crew.acp._dispatch import redact_text
+
+    uuids: dict[str, str] = {}
+
+    def _fold_ids(blob: str) -> str:
+        def _one(match: "re.Match[str]") -> str:
+            token = match.group(0)
+            if token not in uuids:
+                uuids[token] = f"CALL-{len(uuids) + 1}"
+            return uuids[token]
+
+        return re.sub(
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}\b",
+            _one,
+            blob,
+        )
 
     home = os.path.expanduser("~")
     kept: list[dict] = []
@@ -686,6 +711,7 @@ def normalize(frames: list[dict[str, Any]], session_id: str, cwd: str) -> list[d
                     continue
         blob = json.dumps(frame)
         blob = redact_text(blob)
+        blob = _fold_ids(blob)
         if home and home != "~":
             blob = blob.replace(home, "~")
         if session_id:
