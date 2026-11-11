@@ -73,12 +73,14 @@ EXIT_UNPROVEN = 4
 #: (mount, call, permission, answer) is still the whole measurement.
 PROBE_SESSION_KEY = "probe-member-key"
 
-#: Prompt. Names the exact tool and forbids everything else, so the turn is
-#: one call even on a model inclined to explore.
+#: Prompt. Names the exact namespaced tool, demands a tool inventory first
+#: (which distinguishes "the mount never reached the model" from "the model
+#: would not call"), and forbids everything else.
 PROMPT = (
-    "Call the session_status tool on the kirocrew-dashboard MCP server "
-    "with empty arguments {}. Do not use any other tool. "
-    "Reply with the single word done and nothing else."
+    "First reply with the names of every tool available to you. Then call "
+    "the mcp__kirocrew-dashboard__session_status tool with empty arguments "
+    "{}. Do not use any other tool. If that tool is not in your list, reply "
+    "with your tool names followed by the words NO TOOL FOUND and stop."
 )
 
 #: Frame classes dropped from the written capture. Inventories and model
