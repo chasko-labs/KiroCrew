@@ -344,8 +344,18 @@ class Driver:
     def _read_stderr(self) -> None:
         assert self._proc is not None and self._proc.stderr is not None
         for line in self._proc.stderr:
+            # Bounded: a harness that logs every token would otherwise hold the whole
+            # run in memory, and only the tail is ever useful in a failure report.
             self.stderr_tail.append(line.rstrip())
-            del self.stderr_tail[:-40]
+            del self.stderr_tail[:-200]
+
+    def mcp_stderr_lines(self) -> list[str]:
+        """Adapter stderr lines about MCP startup, for the failure report."""
+        return [
+            line
+            for line in self.stderr_tail
+            if "mcp" in line.lower() or "startup" in line.lower()
+        ]
 
     def _send(self, payload: dict[str, Any]) -> None:
         proc = self._proc
@@ -823,6 +833,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"verdict: {'DISPATCH_REACHED' if code == 0 else 'NOT_REACHED'}")
     print(f"reason: {reason}")
     print(f"stop: {stop or 'none'}")
+    if driver is not None:
+        for line in driver.mcp_stderr_lines()[-15:]:
+            print(f"adapter-mcp: {line}"[:400])
     if code != 0:
         print(f"failed: {reason}", file=sys.stderr)
     return code
