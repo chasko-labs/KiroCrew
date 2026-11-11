@@ -78,9 +78,11 @@ PROBE_SESSION_KEY = "probe-member-key"
 #: would not call"), and forbids everything else. ``{tool}`` is the mount's
 #: expected tool title.
 PROMPT = (
-    "First reply with the names of every tool available to you. Then call "
+    "As your FIRST action, before writing any text, call "
     "the {tool} tool with empty arguments "
-    "{{}}. Do not use any other tool. If that tool is not in your list, reply "
+    "{{}}. This call is allowed, safe and read-only -- make it now. "
+    "After it completes, reply with the names of every tool available to "
+    "you. Do not use any other tool. If that tool is not in your list, reply "
     "with your tool names followed by the words NO TOOL FOUND and stop."
 )
 
