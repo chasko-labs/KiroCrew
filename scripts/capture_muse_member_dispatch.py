@@ -90,9 +90,14 @@ WHY_PROMPT = (
 #: stub``. The control for the mount path: if the model lists and calls
 #: ``stub_ping`` but never sees the dashboard server's tools, the mount
 #: works and the dashboard server's shape is what the adapter chokes on.
-STUB_SERVER_CODE = """import json, sys
+STUB_SERVER_CODE = """import json, os, sys
 TOOLS = [{"name": "stub_ping", "description": "Probe tool. Replies pong.",
           "inputSchema": {"type": "object", "properties": {}}}]
+_LOG = os.environ.get("STUB_LOG", "")
+def _log(method):
+    if _LOG:
+        with open(_LOG, "a", encoding="utf-8") as _h:
+            _h.write(str(method) + chr(10))
 for _line in sys.stdin:
     _line = _line.strip()
     if not _line:
@@ -102,6 +107,7 @@ for _line in sys.stdin:
     except ValueError:
         continue
     _id, _method = _req.get("id"), _req.get("method")
+    _log(_method)
     if _method == "initialize":
         _res = {"protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
@@ -748,9 +754,25 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --timeout must be at least 1 second", file=sys.stderr)
         return EXIT_USAGE
 
+    build_dir = REPO_ROOT / "build"
+    build_dir.mkdir(exist_ok=True)
+
     try:
         adapter_argv = resolve_adapter_argv()
         element, expected_title, prompt, stem = mount_plan(args.mount)
+        stub_log = ""
+        if args.mount == "stub":
+            # The relay child logs every method serve sends it, so the
+            # report can tell "serve never connected" apart from "serve
+            # connected and the model would not call".
+            stub_log = str(build_dir / "stub-requests.log")
+            try:
+                Path(stub_log).unlink()
+            except OSError:
+                pass
+            env_pairs = list(element.get("env") or [])
+            env_pairs.append({"name": "STUB_LOG", "value": stub_log})
+            element["env"] = env_pairs
         relay, http_element = start_relay(element)
     except CaptureError as exc:
         print(f"environment: {exc}", file=sys.stderr)
@@ -773,8 +795,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"environment: cannot create {cwd}: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
-    build_dir = REPO_ROOT / "build"
-    build_dir.mkdir(exist_ok=True)
     out_path = build_dir / stem
 
     driver: Driver | None = None
@@ -853,6 +873,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"verdict: {'DISPATCH_REACHED' if code == 0 else 'NOT_REACHED'}")
     print(f"reason: {reason}")
     print(f"stop: {stop or 'none'}")
+    if stub_log:
+        try:
+            seen = Path(stub_log).read_text(encoding="utf-8").split()
+        except OSError:
+            seen = []
+        traffic = " ".join(seen) if seen else "none"
+        print("serve-requests:", traffic)
     if driver is not None:
         for line in driver.mcp_stderr_lines()[-15:]:
             print(f"adapter-mcp: {line}"[:400])
