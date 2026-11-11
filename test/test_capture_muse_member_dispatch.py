@@ -105,6 +105,8 @@ def test_defaults_mount_the_dispatch_entry(cap):
     assert args.mount == "dispatch"
     assert args.timeout == 120.0
     assert args.turn_timeout == 420.0
+    assert args.mode == "readOnly"
+    assert args.settle == 20.0
 
 
 def test_stub_mount_names_itself(cap):

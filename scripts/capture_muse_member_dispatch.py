@@ -731,6 +731,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "(the codex shape); default is the fallback the relayed stub was "
         "first seen called under",
     )
+    parser.add_argument(
+        "--settle",
+        type=float,
+        default=20.0,
+        help="seconds to wait after session/new before the turn, so the "
+        "adapter's MCP connection wins its race with the prompt",
+    )
     return parser.parse_args(argv)
 
 
@@ -772,6 +779,9 @@ def main(argv: list[str] | None = None) -> int:
                 driver.new_session(http_element)
                 mode_note = driver.set_mode(args.mode)
                 print(f"mode: {mode_note}")
+                if args.settle > 0:
+                    print(f"settle: waiting {args.settle:.0f}s for MCP")
+                    time.sleep(args.settle)
                 stop = driver.prompt(prompt)
             except HarnessRefused as exc:
                 print(f"refused: {exc}", file=sys.stderr)
@@ -807,7 +817,7 @@ def main(argv: list[str] | None = None) -> int:
                 "note": (
                     "Driven over stdio by scripts/"
                     f"capture_muse_member_dispatch.py (--mount {args.mount}, "
-                    f"--mode {args.mode}): "
+                    f"--mode {args.mode}, --settle {args.settle:g}): "
                     "session/new carried exactly one element behind "
                     "mcp_http_relay (stdio is refused -32602), mode "
                     "readOnly set over session/set_mode. Dispatch: members."
