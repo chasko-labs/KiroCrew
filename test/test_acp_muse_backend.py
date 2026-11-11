@@ -321,3 +321,53 @@ def test_modes_fixture_carries_no_auto_approve_default():
             seen = {mode["id"] for mode in modes.get("availableModes", [])}
             assert modes["currentModeId"] != "bypassApprovals"
     assert "bypassApprovals" in seen, "the refused mode must stay advertised-and-refused"
+
+
+def _no_dial_frames():
+    lines = (
+        FIXTURES / "member-dispatch-no-dial-measured.jsonl"
+    ).read_text().splitlines()
+    header = json.loads(lines[0])
+    assert header["_meta"]["backend"] == "muse"
+    assert header["_meta"]["recorded"] == "live"
+    return [json.loads(line) for line in lines[1:]]
+
+
+def test_no_dial_fixture_shows_no_dispatch_attempt():
+    """The 1.4.15 miss, pinned: no MCP call, no permission, clean end.
+
+    serve never dialed the relayed server, so the model listed native tools
+    only and ended the turn. If a future host starts dialing, this goes red
+    and the round trip must be re-driven (scripts/capture_muse_member_dispatch.py)
+    before member_thread_tools is claimed.
+    """
+    frames = _no_dial_frames()
+    for frame in frames:
+        params = frame.get("params") or {}
+        update = params.get("update") or {}
+        if update.get("sessionUpdate") == "tool_call":
+            assert "mcp__" not in json.dumps(update), update.get("title")
+        assert frame.get("method") != "session/request_permission"
+    assert any(
+        (frame.get("result") or {}).get("stopReason") == "end_turn" for frame in frames
+    ), "the turn must have ended, not hung"
+
+
+def test_no_dial_fixture_advertises_model_and_effort_options():
+    """Stepping stones the miss left behind: configOptions worth driving next.
+
+    Advertisement is not a claim -- model_switch and reasoning_effort stay
+    unclaimed until a set is measured -- but the option ids and values a
+    future drive needs are pinned here.
+    """
+    frames = _no_dial_frames()
+    options = {}
+    for frame in frames:
+        result = frame.get("result") or {}
+        for option in result.get("configOptions", []):
+            options[option["id"]] = option
+    assert options["model"]["currentValue"] == "muse-spark-1.2"
+    assert [o["value"] for o in options["model"]["options"]] == ["muse-spark-1.2"]
+    effort = options["reasoningEffort"]
+    assert effort["currentValue"] == "high"
+    assert "ultra" in [o["value"] for o in effort["options"]]

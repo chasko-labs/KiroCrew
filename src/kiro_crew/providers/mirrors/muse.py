@@ -1,8 +1,10 @@
 """Muse Code's agent-config mirror (``muse-code-acp`` adapter + ``muse serve``).
 
 Measured against @bex-co/muse-code-acp 0.11.0 driving host 1.4.14
-(SDK 1.4.12), 2026-11-09, NOT re-inferred. Every claim below names the
-probe that produced it; anything unmeasured is marked open.
+(SDK 1.4.12), 2026-11-09, NOT re-inferred -- plus a second measurement on
+host 1.4.15 (the ``muse`` CLI auto-updated), 2026-11-11, which REGRESSED the
+relayed-MCP path below. Every claim below names the probe that produced it;
+anything unmeasured is marked open.
 
 Wire facts:
 * ``initialize`` answers protocolVersion 1; prompt image+embeddedContext;
@@ -15,6 +17,17 @@ Wire facts:
 * ``session/load`` needs the full params and fails pre-turn ("not found
   in the muse session store" — the store write happens on the first
   turn); post-turn load succeeds and echoes the mode inventory.
+* HOST 1.4.15 REGRESSION (2026-11-11,
+  ``test/fixtures/acp_frames/muse/member-dispatch-no-dial-measured.jsonl``,
+  driven by ``scripts/capture_muse_member_dispatch.py --mount stub``):
+  ``session/new`` still ACCEPTS the relayed ``{name, type: http, url,
+  headers: []}`` element, but ``muse serve`` never dials it -- the relay
+  child logged zero MCP methods across the settle wait and the whole turn
+  (STUB_LOG), the model listed native tools only ("NO TOOL FOUND"), no
+  ``session/request_permission`` fired. Member_thread_tools therefore stays
+  unclaimed: the H6 round trip (mount, call, gate, answer) cannot complete
+  while serve does not connect. Re-run the drive after a host or adapter
+  change before claiming anything on this path.
 * Modes: ``default`` ("On request" — approvals offered through ACP
   permission requests unless the native policy settles them),
   ``readOnly``, ``plan``, ``bypassApprovals`` (auto-approve — NEVER
@@ -70,9 +83,12 @@ class MuseCodeMirror(AgentConfigMirror):
             Concern.MCP_SERVERS: Ruling(
                 Disposition.TRANSLATED,
                 "stdio servers travel through kiro_crew.mcp_http_relay as "
-                "{name, type: http, url, headers: []} (measured: raw stdio "
-                "refused -32602; relayed stub listed, called, "
-                "permission-gated). HTTP servers pass through unchanged.",
+                "{name, type: http, url, headers: []} (measured on host "
+                "1.4.14: raw stdio refused -32602; relayed stub listed, "
+                "called, permission-gated). REGRESSED on host 1.4.15 "
+                "(2026-11-11): session/new still accepts the element but "
+                "serve never dials it -- see the module docstring. HTTP "
+                "servers pass through unchanged.",
             ),
             Concern.TOOL_ALLOWLIST: Ruling(
                 Disposition.DELIVERED,
@@ -93,12 +109,17 @@ class MuseCodeMirror(AgentConfigMirror):
             Concern.MODEL: Ruling(
                 Disposition.WITHHELD,
                 "model selection stays with the Muse subscription/session; "
-                "no model id is sent. OPEN: verify model pinning if the "
-                "adapter exposes it.",
+                "no model id is sent. Since 2026-11-11 the session/new "
+                "result ADVERTISES a model config option (current "
+                "muse-spark-1.2, member-dispatch-no-dial-measured.jsonl), "
+                "but no set has been measured. OPEN: drive "
+                "session/set_config_option with configId model and verify "
+                "pinning before claiming.",
             ),
             Concern.MODEL_ALLOWLIST: Ruling(
                 Disposition.WITHHELD,
-                "same as MODEL: no allowlist channel measured.",
+                "same as MODEL, plus the advertised allowlist holds exactly "
+                "one entry (muse-spark-1.2). No allowlist channel measured.",
             ),
             Concern.PERMISSION_MODE: Ruling(
                 Disposition.TRANSLATED,
