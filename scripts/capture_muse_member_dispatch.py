@@ -75,13 +75,50 @@ PROBE_SESSION_KEY = "probe-member-key"
 
 #: Prompt. Names the exact namespaced tool, demands a tool inventory first
 #: (which distinguishes "the mount never reached the model" from "the model
-#: would not call"), and forbids everything else.
+#: would not call"), and forbids everything else. ``{tool}`` is the mount's
+#: expected tool title.
 PROMPT = (
     "First reply with the names of every tool available to you. Then call "
-    "the mcp__kirocrew-dashboard__session_status tool with empty arguments "
-    "{}. Do not use any other tool. If that tool is not in your list, reply "
+    "the {tool} tool with empty arguments "
+    "{{}}. Do not use any other tool. If that tool is not in your list, reply "
     "with your tool names followed by the words NO TOOL FOUND and stop."
 )
+
+#: A one-tool MCP stdio server, spawned as the relay child in ``--mount
+#: stub``. The control for the mount path: if the model lists and calls
+#: ``stub_ping`` but never sees the dashboard server's tools, the mount
+#: works and the dashboard server's shape is what the adapter chokes on.
+STUB_SERVER_CODE = """import json, sys
+TOOLS = [{"name": "stub_ping", "description": "Probe tool. Replies pong.",
+          "inputSchema": {"type": "object", "properties": {}}}]
+for _line in sys.stdin:
+    _line = _line.strip()
+    if not _line:
+        continue
+    try:
+        _req = json.loads(_line)
+    except ValueError:
+        continue
+    _id, _method = _req.get("id"), _req.get("method")
+    if _method == "initialize":
+        _res = {"protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "stub", "version": "0"}}
+    elif _method == "tools/list":
+        _res = {"tools": TOOLS}
+    elif _method == "tools/call":
+        _res = {"content": [{"type": "text", "text": "pong-probe"}]}
+    elif isinstance(_method, str) and _method.startswith("notifications/"):
+        continue
+    else:
+        _res = {"error": {"code": -32601, "message": "nope"}}
+    if isinstance(_res, dict) and "error" in _res:
+        _out = {"jsonrpc": "2.0", "id": _id, "error": _res["error"]}
+    else:
+        _out = {"jsonrpc": "2.0", "id": _id, "result": _res}
+    sys.stdout.write(json.dumps(_out) + chr(10))
+    sys.stdout.flush()
+"""
 
 #: Frame classes dropped from the written capture. Inventories and model
 #: prose the corpus refuses: the harness's own command list, run ids and
@@ -181,9 +218,34 @@ def start_relay(element: dict[str, Any]):
     return relay, {"name": name, "type": "http", "url": relay.url, "headers": []}
 
 
-def dispatch_tool_title() -> str:
-    """The tool_call title the round trip must carry."""
-    return "mcp__kirocrew-dashboard__session_status"
+def build_stub_element() -> dict[str, Any]:
+    """A one-tool stdio element for the ``--mount stub`` control."""
+    return {
+        "name": "stub",
+        "type": "stdio",
+        "command": sys.executable,
+        "args": ["-c", STUB_SERVER_CODE],
+        "env": [],
+    }
+
+
+def mount_plan(mount: str) -> tuple[dict[str, Any], str, str, str]:
+    """(session element, expected tool title, prompt, capture file stem)."""
+    if mount == "stub":
+        return (
+            build_stub_element(),
+            "mcp__stub__stub_ping",
+            PROMPT.format(tool="mcp__stub__stub_ping"),
+            "muse-stub-control.jsonl",
+        )
+    if mount == "dispatch":
+        return (
+            build_dispatch_element(),
+            "mcp__kirocrew-dashboard__session_status",
+            PROMPT.format(tool="mcp__kirocrew-dashboard__session_status"),
+            "muse-member-dispatch.jsonl",
+        )
+    raise CaptureError(f"unknown --mount {mount!r}: want dispatch or stub")
 
 
 def _first_allow_option(params: Any) -> str:
@@ -229,6 +291,7 @@ class Driver:
     permission_requests: int = 0
     dispatch_permission_requests: int = 0
     other_rejections: int = 0
+    expected_title: str = ""
 
     _lines: Any = None
     _proc: Any = None
@@ -378,7 +441,7 @@ class Driver:
             params = frame.get("params") or {}
             tool = params.get("toolCall") or {}
             title = str(tool.get("title") or "")
-            if title == dispatch_tool_title():
+            if self.expected_title and title == self.expected_title:
                 self.dispatch_permission_requests += 1
                 option_id = _first_allow_option(params)
                 if option_id:
@@ -538,11 +601,11 @@ def _call_text(call: dict[str, Any]) -> str:
 def measure(driver: Driver) -> tuple[int, str]:
     """Read the membership bar off the drive: mount, call, gate, answer."""
     calls = _updates(driver.frames, "tool_call")
+    server, _, tool = driver.expected_title.replace("mcp__", "").partition("__")
     dispatch_calls = [
         c
         for c in calls
-        if "session_status" in _call_text(c)
-        and "kirocrew-dashboard" in _call_text(c)
+        if tool in _call_text(c) and server in _call_text(c)
     ]
     permissions = [
         f
@@ -615,7 +678,7 @@ def normalize(frames: list[dict[str, Any]], session_id: str, cwd: str) -> list[d
     return kept
 
 
-def main(argv: list[str] | None = None) -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Drive muse-code-acp through a member-dispatch round trip."
     )
@@ -637,7 +700,19 @@ def main(argv: list[str] | None = None) -> int:
         help="seconds for the whole model turn before giving up (partial "
         "frames are still written)",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--mount",
+        default="dispatch",
+        choices=("dispatch", "stub"),
+        help="dispatch mounts Crew's session-control entry (the membership "
+        "bar); stub mounts a one-tool server as the control for the mount "
+        "path itself",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
 
     if not args.timeout >= 1.0:
         print("error: --timeout must be at least 1 second", file=sys.stderr)
@@ -645,7 +720,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         adapter_argv = resolve_adapter_argv()
-        element = build_dispatch_element()
+        element, expected_title, prompt, stem = mount_plan(args.mount)
         relay, http_element = start_relay(element)
     except CaptureError as exc:
         print(f"environment: {exc}", file=sys.stderr)
@@ -660,19 +735,21 @@ def main(argv: list[str] | None = None) -> int:
 
     build_dir = REPO_ROOT / "build"
     build_dir.mkdir(exist_ok=True)
-    out_path = build_dir / "muse-member-dispatch.jsonl"
+    out_path = build_dir / stem
 
     driver: Driver | None = None
     stop = ""
     code, reason = EXIT_NOT_REACHED, "drive did not finish"
     try:
-        with Driver(adapter_argv, cwd, args.timeout, args.turn_timeout) as driver:
+        with Driver(
+            adapter_argv, cwd, args.timeout, args.turn_timeout, expected_title=expected_title
+        ) as driver:
             try:
                 driver.initialize()
                 driver.new_session(http_element)
                 mode_note = driver.set_read_only()
                 print(f"mode: {mode_note}")
-                stop = driver.prompt(PROMPT)
+                stop = driver.prompt(prompt)
             except HarnessRefused as exc:
                 print(f"refused: {exc}", file=sys.stderr)
                 return EXIT_HARNESS_REFUSED
@@ -706,15 +783,16 @@ def main(argv: list[str] | None = None) -> int:
                 "agent_name": driver.agent_name,
                 "note": (
                     "Driven over stdio by scripts/"
-                    "capture_muse_member_dispatch.py: session/new carried "
-                    "exactly one element, members."
-                    "member_dispatch_session_server('probe-member-key') "
-                    "behind mcp_http_relay (stdio is refused -32602), "
-                    "mode readOnly set over session/setMode, the model's "
-                    "session_status call raised one permission request "
-                    "(approved once; every other request rejected), and "
-                    "the server answered it (it refuses, as the probe key "
-                    "names no live session). The session uuid reads "
+                    f"capture_muse_member_dispatch.py (--mount {args.mount}): "
+                    "session/new carried exactly one element behind "
+                    "mcp_http_relay (stdio is refused -32602), mode "
+                    "readOnly set over session/set_mode. Dispatch: members."
+                    "member_dispatch_session_server('probe-member-key'), "
+                    "the model's session_status call raising one permission "
+                    "request (approved once; every other request rejected), "
+                    "the server answering (it refuses, as the probe key "
+                    "names no live session). Stub: a one-tool server as the "
+                    "control for the mount path. The session uuid reads "
                     "SESSION and the working directory reads ~/work; "
                     "available_commands_update, session_info_update and "
                     "agent_thought_chunk frames are dropped as the corpus "
