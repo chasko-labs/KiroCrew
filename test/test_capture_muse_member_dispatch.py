@@ -253,12 +253,13 @@ def test_normalize_drops_inventories_and_neutralizes_host(cap, tmp_path):
 
 
 def test_normalize_folds_uuids_to_joinable_call_names(cap, tmp_path):
+    session = "sess-9f3a"
     frames = [
         {
             "jsonrpc": "2.0",
             "method": "session/update",
             "params": {
-                "sessionId": "s",
+                "sessionId": session,
                 "update": {
                     "sessionUpdate": "tool_call",
                     "toolCallId": "01a1cb9a-e1df-7ae3-bcd6-978626e14473",
@@ -270,7 +271,7 @@ def test_normalize_folds_uuids_to_joinable_call_names(cap, tmp_path):
             "jsonrpc": "2.0",
             "method": "session/update",
             "params": {
-                "sessionId": "s",
+                "sessionId": session,
                 "update": {
                     "sessionUpdate": "tool_call_update",
                     "toolCallId": "01a1cb9a-e1df-7ae3-bcd6-978626e14473",
@@ -279,7 +280,7 @@ def test_normalize_folds_uuids_to_joinable_call_names(cap, tmp_path):
             },
         },
     ]
-    lines = cap.normalize(frames, "s", str(tmp_path))
+    lines = cap.normalize(frames, session, str(tmp_path))
     blob = json.dumps(lines)
     assert "01a1cb9a" not in blob
     assert lines[0]["params"]["update"]["toolCallId"] == "CALL-1"
