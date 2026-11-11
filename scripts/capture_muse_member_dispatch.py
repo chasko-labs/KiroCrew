@@ -756,7 +756,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"environment: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
-    cwd = Path(args.cwd) if args.cwd else (Path.home() / "workspaces" / "muse-probe")
+    # A FRESH directory per run, never reused: the adapter persists the
+    # session's injected servers into the workspace's .mcp.json, so a reused
+    # directory inherits a stale stdio entry that collides with the next
+    # run's relayed element and makes tool listing flaky.
+    if args.cwd:
+        cwd = Path(args.cwd)
+    else:
+        stamp = _datetime.datetime.now(_datetime.timezone.utc).strftime(
+            "%Y%m%d-%H%M%S"
+        )
+        cwd = Path.home() / "workspaces" / f"muse-probe-{stamp}"
     try:
         cwd.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
